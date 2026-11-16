@@ -2,6 +2,7 @@ import type {
   ColorAdjustments,
   ColorFilter,
   DigitalHumanActionId,
+  DigitalHumanCameraMotion,
   DigitalHumanClipConfig,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
@@ -13,7 +14,9 @@ import type {
 } from '../types/studio';
 import {
   clampFacialMuscles,
+  computeDigitalHumanCameraTransform,
   getDigitalHumanActionTemplate,
+  getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
   getVoiceActivityAtTime,
 } from './digitalHumanAssets';
@@ -701,7 +704,8 @@ export function renderTimelineFrame({
       width,
       height,
       timeSec,
-      voiceActivity
+      voiceActivity,
+      progress
     );
   }
 
@@ -738,7 +742,9 @@ function drawAnchorPortraitCover(
   action: DigitalHumanActionId = 'explain',
   pointDir: -1 | 1 = 1,
   emotion: DigitalHumanEmotionId = 'neutral',
-  muscles?: DigitalHumanFacialMuscles
+  muscles?: DigitalHumanFacialMuscles,
+  cameraMotion?: DigitalHumanCameraMotion,
+  progress = 0.5
 ) {
   const natW = el instanceof HTMLVideoElement ? el.videoWidth || 540 : el.naturalWidth || 540;
   const natH = el instanceof HTMLVideoElement ? el.videoHeight || 720 : el.naturalHeight || 720;
@@ -823,11 +829,17 @@ function drawAnchorPortraitCover(
   const emotionLiftY = -m.browLift * (dh * 0.008);
   const emotionZoom = emotion === 'suspense' ? 1.02 + Math.sin(timeSec * 1.8) * 0.01 : 1;
 
-  const finalW = natW * coverScale * poseScale * emotionZoom;
-  const finalH = natH * coverScale * poseScale * poseScaleY * emotionZoom;
+  // Camera Motion Enhancement (Dolly push/pull, Pan sweep, Handheld shake)
+  const cam = computeDigitalHumanCameraTransform(cameraMotion, timeSec, progress, dw, dh);
 
-  ctx.translate(dx + dw / 2 + shiftX, dy + dh * 0.44 + bobY + emotionLiftY);
-  ctx.rotate(microTilt);
+  const finalW = natW * coverScale * poseScale * emotionZoom * cam.zoom;
+  const finalH = natH * coverScale * poseScale * poseScaleY * emotionZoom * cam.zoom;
+
+  ctx.translate(
+    dx + dw / 2 + shiftX + cam.offsetX,
+    dy + dh * 0.44 + bobY + emotionLiftY + cam.offsetY
+  );
+  ctx.rotate(microTilt + cam.rotationRad);
   // Bias vertical alignment slightly upward to preserve head & face framing
   ctx.drawImage(el, -finalW / 2, -finalH * 0.42, finalW, finalH);
   ctx.restore();
@@ -1214,11 +1226,11 @@ function drawDigitalHumanFullScene(
     ctx.restore();
   }
 
-  // Main Digital Human Portrait / Video with Pose + Facial Muscle Kinematics
+  // Main Digital Human Portrait / Video with Pose + Facial Muscle Kinematics + Camera Motion
   if (el) {
-    const zoom = 1 + 0.03 * progress;
-    const padW = width * zoom;
-    const padH = height * zoom;
+    const baseZoom = dh.cameraMotion?.enabled ? 1 : 1 + 0.03 * progress;
+    const padW = width * baseZoom;
+    const padH = height * baseZoom;
     drawAnchorPortraitCover(
       ctx,
       el,
@@ -1233,7 +1245,9 @@ function drawDigitalHumanFullScene(
       action,
       1,
       emotion,
-      muscles
+      muscles,
+      dh.cameraMotion,
+      progress
     );
   }
 
@@ -1267,7 +1281,9 @@ function drawDigitalHumanFullScene(
   );
 
   // Lower-third / Header Anchor Studio Badge (above safe bottom caption zone)
-  const badgeW = Math.min(width * 0.76, 355);
+  const camActive = dh.cameraMotion?.enabled && dh.cameraMotion.preset !== 'none';
+  const camPreset = camActive ? getDigitalHumanCameraPreset(dh.cameraMotion?.preset) : null;
+  const badgeW = Math.min(width * 0.82, camPreset ? 395 : 355);
   const badgeH = 34;
   const badgeX = width * 0.06;
   const badgeY = height * 0.12;
@@ -1279,7 +1295,7 @@ function drawDigitalHumanFullScene(
   ctx.fill();
   ctx.stroke();
 
-  // Live speaking pulse dot + name + active pose + emotion tag
+  // Live speaking pulse dot + name + active pose + emotion + camera tag
   ctx.fillStyle = speechPulse > 0.12 ? emotionPreset.badgeColor || accent : '#34d399';
   ctx.beginPath();
   ctx.arc(badgeX + 14, badgeY + badgeH / 2, 4 + speechPulse * 1.6, 0, Math.PI * 2);
@@ -1290,7 +1306,8 @@ function drawDigitalHumanFullScene(
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   const emotionTag = emotionEnabled && emotion !== 'neutral' ? ` · ${emotionPreset.label}` : '';
-  ctx.fillText(`虚拟主播 · ${dh.profileName} · ${actionTmpl.label}${emotionTag}`, badgeX + 26, badgeY + badgeH / 2);
+  const camTag = camPreset ? ` · ${camPreset.label}` : '';
+  ctx.fillText(`虚拟主播 · ${dh.profileName} · ${actionTmpl.label}${emotionTag}${camTag}`, badgeX + 26, badgeY + badgeH / 2);
 
   if (dh.showLiveWaveRing) {
     drawVoiceWaveBars(
@@ -1316,7 +1333,8 @@ export function drawDigitalHumanPipOverlay(
   width: number,
   height: number,
   timeSec: number,
-  voiceActivity: number
+  voiceActivity: number,
+  progress = 0.5
 ) {
   const accent = dh.accentColor || '#fb7185';
   const action = dh.action ?? 'explain';
@@ -1430,7 +1448,9 @@ export function drawDigitalHumanPipOverlay(
       action,
       pointDir,
       emotion,
-      muscles
+      muscles,
+      dh.cameraMotion,
+      progress
     );
   }
 
@@ -1529,7 +1549,8 @@ export function renderDigitalHumanMiniStage(
   voiceActivity: number,
   action: DigitalHumanActionId = 'explain',
   emotion: DigitalHumanEmotionId = 'neutral',
-  muscles?: DigitalHumanFacialMuscles
+  muscles?: DigitalHumanFacialMuscles,
+  cameraMotion?: DigitalHumanCameraMotion
 ) {
   const actionTmpl = getDigitalHumanActionTemplate(action);
   const emotionPreset = getDigitalHumanEmotionPreset(emotion);
@@ -1572,6 +1593,7 @@ export function renderDigitalHumanMiniStage(
   }
 
   if (img.complete && img.naturalWidth > 0) {
+    const loopProgress = (timeSec % 3.2) / 3.2;
     drawAnchorPortraitCover(
       ctx,
       img,
@@ -1586,7 +1608,9 @@ export function renderDigitalHumanMiniStage(
       action,
       1,
       emotion,
-      resolvedMuscles
+      resolvedMuscles,
+      cameraMotion,
+      loopProgress
     );
   }
 

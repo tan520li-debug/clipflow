@@ -38,6 +38,7 @@ import type {
   ColorFilter,
   CopyrightAlternativeTrack,
   DigitalHumanActionId,
+  DigitalHumanCameraMotion,
   DigitalHumanClipConfig,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
@@ -69,7 +70,9 @@ import {
 } from '../utils/canvasRenderer';
 import { DigitalHumanTab, type DigitalHumanInsertTarget } from './DigitalHumanTab';
 import {
+  analyzeScriptForActionSuggestions,
   getDigitalHumanActionTemplate,
+  getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
 } from '../utils/digitalHumanAssets';
 import { TransitionMiniPreview } from './TransitionMiniPreview';
@@ -143,6 +146,13 @@ interface InspectorPanelProps {
     action: DigitalHumanActionId,
     actionIntensity?: number
   ) => void;
+  onBatchApplyDigitalHumanActions?: (
+    updates: Array<{
+      clipId: string;
+      action: DigitalHumanActionId;
+      actionIntensity?: number;
+    }>
+  ) => void;
   onUpdateClipDigitalHumanEmotion: (
     clipId: string,
     payload: {
@@ -151,6 +161,10 @@ interface InspectorPanelProps {
       facialMuscles: DigitalHumanFacialMuscles;
       emotionSummary?: string;
     }
+  ) => void;
+  onUpdateClipDigitalHumanCameraMotion?: (
+    clipId: string,
+    cameraMotion: DigitalHumanCameraMotion
   ) => void;
   onInsertDigitalHumanClip: (params: {
     insertAt: DigitalHumanInsertTarget;
@@ -166,6 +180,7 @@ interface InspectorPanelProps {
       clonedVoiceId?: string;
     };
   }) => void;
+  brief?: string;
 }
 
 const PRESET_TRANSITIONS: TransitionType[] = [
@@ -322,8 +337,11 @@ export function InspectorPanel({
   onEmbedDigitalHumanPip,
   onRemoveClipDigitalHuman,
   onUpdateClipDigitalHumanAction,
+  onBatchApplyDigitalHumanActions,
   onUpdateClipDigitalHumanEmotion,
+  onUpdateClipDigitalHumanCameraMotion,
   onInsertDigitalHumanClip,
+  brief = '',
 }: InspectorPanelProps) {
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const speechFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -378,6 +396,15 @@ export function InspectorPanel({
   const activeClonedVoice =
     clonedVoices.find((v) => v.id === audio.activeClonedVoiceId) ?? null;
   const hasAnyDigitalHumanOnTrack = clips.some((c) => Boolean(c.digitalHuman));
+  const selectedClipActionSuggestion = selectedClip?.digitalHuman
+    ? analyzeScriptForActionSuggestions({
+        brief,
+        scriptText: selectedClip.digitalHuman.spokenScript || '',
+        clips,
+        subtitles,
+        selectedClipId: selectedClip.id,
+      })
+    : null;
 
   const pairKey = selectedClip && nextClip ? `${selectedClip.id}->${nextClip.id}` : null;
   const selectedClipIndex = selectedClip ? clips.findIndex((c) => c.id === selectedClip.id) : -1;
@@ -1518,36 +1545,72 @@ export function InspectorPanel({
             onEmbedDigitalHumanPip={onEmbedDigitalHumanPip}
             onRemoveClipDigitalHuman={onRemoveClipDigitalHuman}
             onUpdateClipDigitalHumanAction={onUpdateClipDigitalHumanAction}
+            onBatchApplyDigitalHumanActions={onBatchApplyDigitalHumanActions}
             onUpdateClipDigitalHumanEmotion={onUpdateClipDigitalHumanEmotion}
+            onUpdateClipDigitalHumanCameraMotion={onUpdateClipDigitalHumanCameraMotion}
             onInsertDigitalHumanClip={onInsertDigitalHumanClip}
+            brief={brief}
           />
         ) : (
           <>
         {selectedClip && !selectedSubtitle ? (
           <div className="space-y-4">
             {selectedClip.digitalHuman && (
-              <div className="rounded-lg border border-violet-500/40 bg-violet-950/25 px-3 py-2 flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold text-violet-200 truncate">
-                    {selectedClip.digitalHuman.mode === 'full-scene'
-                      ? `数字人主播镜头 · ${selectedClip.digitalHuman.profileName}`
-                      : `已嵌入画中画数字人 · ${selectedClip.digitalHuman.profileName}`}
+              <div className="rounded-lg border border-violet-500/40 bg-violet-950/25 px-3 py-2 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-violet-200 truncate">
+                      {selectedClip.digitalHuman.mode === 'full-scene'
+                        ? `数字人主播镜头 · ${selectedClip.digitalHuman.profileName}`
+                        : `已嵌入画中画数字人 · ${selectedClip.digitalHuman.profileName}`}
+                    </div>
+                    <div className="text-[10px] text-cyan-300 truncate mt-0.5">
+                      姿态：{getDigitalHumanActionTemplate(selectedClip.digitalHuman.action).label}
+                      {selectedClip.digitalHuman.emotionMatchEnabled !== false &&
+                      selectedClip.digitalHuman.emotion
+                        ? ` · 情感：${getDigitalHumanEmotionPreset(selectedClip.digitalHuman.emotion).label}`
+                        : ''}
+                      {selectedClip.digitalHuman.cameraMotion?.enabled &&
+                      selectedClip.digitalHuman.cameraMotion.preset !== 'none'
+                        ? ` · 运镜：${getDigitalHumanCameraPreset(selectedClip.digitalHuman.cameraMotion.preset).label}`
+                        : ''}
+                    </div>
                   </div>
-                  <div className="text-[10px] text-cyan-300 truncate mt-0.5">
-                    姿态：{getDigitalHumanActionTemplate(selectedClip.digitalHuman.action).label}
-                    {selectedClip.digitalHuman.emotionMatchEnabled !== false &&
-                    selectedClip.digitalHuman.emotion
-                      ? ` · 情感：${getDigitalHumanEmotionPreset(selectedClip.digitalHuman.emotion).label}`
-                      : ''}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInspectorTab('digital-human')}
+                    className="text-[10px] font-medium text-violet-300 hover:text-white shrink-0"
+                  >
+                    调节参数 →
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setInspectorTab('digital-human')}
-                  className="text-[10px] font-medium text-violet-300 hover:text-white shrink-0"
-                >
-                  调节参数 →
-                </button>
+                {selectedClipActionSuggestion &&
+                  selectedClipActionSuggestion.primaryAction !==
+                    (selectedClip.digitalHuman.action ?? 'explain') && (
+                    <div className="flex items-center justify-between gap-2 rounded border border-amber-400/50 bg-amber-500/10 px-2 py-1 text-[10px]">
+                      <span className="text-amber-200 truncate">
+                        语境「{selectedClipActionSuggestion.contextStage}」推荐动作：
+                        <strong className="text-amber-100 ml-0.5">
+                          {getDigitalHumanActionTemplate(selectedClipActionSuggestion.primaryAction).label}
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const act = selectedClipActionSuggestion.primaryAction;
+                          const tmpl = getDigitalHumanActionTemplate(act);
+                          onUpdateClipDigitalHumanAction(
+                            selectedClip.id,
+                            act,
+                            tmpl.recommendedIntensity
+                          );
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold shrink-0"
+                      >
+                        一键采纳
+                      </button>
+                    </div>
+                  )}
               </div>
             )}
             <div>

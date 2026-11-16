@@ -1,9 +1,15 @@
 import type {
   DigitalHumanActionId,
+  DigitalHumanActionRecommendation,
+  DigitalHumanCameraMotion,
+  DigitalHumanCameraPresetId,
+  DigitalHumanClipActionSuggestion,
   DigitalHumanEmotionAnalysis,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
   DigitalHumanProfile,
+  SubtitleSegment,
+  TimelineClip,
   VoiceoverCue,
   VoiceoverVoice,
 } from '../types/studio';
@@ -832,5 +838,432 @@ export async function analyzeAudioProsodyForEmotion(
     },
     muscles,
     analyzedAt: new Date().toISOString(),
+  };
+}
+
+function classifySingleContextAction(params: {
+  text: string;
+  label?: string;
+  hookTag?: string;
+  clipIndex: number;
+  totalClips: number;
+}): {
+  action: DigitalHumanActionId;
+  secondary: DigitalHumanActionId;
+  stage: string;
+  reason: string;
+  confidence: number;
+} {
+  const { text, label = '', hookTag = '', clipIndex, totalClips } = params;
+  const combined = `${hookTag} ${label} ${text}`.trim();
+  const isFirst = clipIndex === 0;
+  const isLast = totalClips > 1 && clipIndex === totalClips - 1;
+
+  // Score each action by context keywords + structural position
+  const scores: Record<DigitalHumanActionId, number> = {
+    explain: 0.4,
+    point: 0.25,
+    wave: 0.15,
+    amaze: 0.2,
+    nod: 0.2,
+    'thumbs-up': 0.15,
+  };
+
+  if (/高潮|爆点|反转|惊艳|太绝|绝了|天呐|震撼|没想到|居然|竟然|秘密|炸裂|省一半|翻倍|离谱|真相|揭秘|惊呆|[！!]{1,}/.test(combined)) {
+    scores.amaze += /高潮|爆点|反转|惊艳|震撼|天呐|秘密/.test(combined) ? 1.35 : 0.95;
+  }
+  if (/看这里|你看|注意看|细节|实拍|展示|特写|对比|步骤|演示|注水|萃取|倒入|研磨|磨豆|拉花|画面|这里|左边|右边|界面|外观|构造|手冲|教你/.test(combined)) {
+    scores.point += 1.25;
+  }
+  if (/大家好|哈喽|嗨|欢迎|各位|早八|先说|开场|见面|认识一下|拜拜|下期见/.test(combined)) {
+    scores.wave += 1.15;
+  }
+  if (/点赞|关注|收藏|评论|下单|购买|链接|福利|试试|推荐入手|快去|记得|冲|CTA|转化/.test(combined)) {
+    scores['thumbs-up'] += 1.25;
+  }
+  if (/实测|口碑|认同|靠谱|确实|没错|真的香|值得|稳了|亲测|满意|舒服|总结/.test(combined)) {
+    scores.nod += 1.05;
+  }
+  if (/讲解|原理|为什么|科普|干货|教程|方法|逻辑|首先|其次|核心|重点|分析|拆解|指南|攻略/.test(combined)) {
+    scores.explain += 1.05;
+  }
+
+  // Narrative arc positional boosts
+  if (isFirst) {
+    scores.wave += 0.45;
+    if (/钩子|hook|3秒|开场/.test(combined.toLowerCase())) {
+      scores.amaze += 0.3;
+    }
+  } else if (isLast) {
+    scores['thumbs-up'] += 0.45;
+    scores.nod += 0.3;
+  } else if (totalClips >= 3 && clipIndex === Math.floor(totalClips * 0.65)) {
+    // Typical climax beat before ending
+    scores.amaze += 0.25;
+  }
+
+  const ranked = (Object.entries(scores) as Array<[DigitalHumanActionId, number]>).sort(
+    (a, b) => b[1] - a[1]
+  );
+  const topAction = ranked[0][0];
+  const secondary = ranked[1][0];
+  const topScore = ranked[0][1];
+  const confidence = Number(Math.min(0.95, Math.max(0.72, 0.65 + topScore * 0.14)).toFixed(2));
+
+  const stageReasonMap: Record<DigitalHumanActionId, { stage: string; reason: string }> = {
+    point: {
+      stage: '细节讲解',
+      reason: '脚本包含画面细节、步骤展示或实拍指代词，推荐「指引」手势引导观众聚焦核心视觉卖点。',
+    },
+    amaze: {
+      stage: '高潮爆点',
+      reason: '检测到强情绪感叹、反转揭秘或高潮亮点词，推荐「惊叹」推镜姿态放大吸睛瞬间。',
+    },
+    wave: {
+      stage: '开场招呼',
+      reason: '属于开场问候或前3秒建立亲近感语境，推荐「挥手」动作自然拉近观众距离。',
+    },
+    'thumbs-up': {
+      stage: '片尾号召',
+      reason: '包含行动号召、福利种草或收尾互动引导，推荐「点赞」手势提升关注与转化。',
+    },
+    nod: {
+      stage: '观点认同',
+      reason: '强调实测口碑、总结肯定或理性背书，推荐「点头」姿态增强可信度与说服力。',
+    },
+    explain: {
+      stage: '干货阐述',
+      reason: '侧重条理化科普、原理解析或教程说明，推荐「讲解」双节拍手势保持稳健节奏。',
+    },
+  };
+
+  return {
+    action: topAction,
+    secondary,
+    stage: stageReasonMap[topAction].stage,
+    reason: stageReasonMap[topAction].reason,
+    confidence,
+  };
+}
+
+/**
+ * Analyzes the current video brief, timeline clips, and spoken subtitles/script
+ * to automatically highlight context-matched actions in the editor.
+ */
+export function analyzeScriptForActionSuggestions(params: {
+  brief?: string;
+  scriptText?: string;
+  clips: TimelineClip[];
+  subtitles: SubtitleSegment[];
+  selectedClipId?: string | null;
+}): DigitalHumanActionRecommendation {
+  const { brief = '', scriptText = '', clips, subtitles, selectedClipId } = params;
+
+  let cursor = 0;
+  const clipSuggestions: DigitalHumanClipActionSuggestion[] = clips.map((clip, idx) => {
+    const start = cursor;
+    const end = cursor + clip.duration;
+    cursor = end;
+
+    const overlappingSubs = subtitles
+      .filter((s) => {
+        const mid = s.startTime + s.duration / 2;
+        return mid >= start && mid <= end;
+      })
+      .map((s) => s.text.trim())
+      .filter(Boolean)
+      .join(' ');
+
+    const isSelected = clip.id === selectedClipId;
+    const contextText = [
+      overlappingSubs,
+      isSelected && scriptText.trim() ? scriptText.trim() : '',
+      !overlappingSubs && brief.trim() ? brief.trim() : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const classified = classifySingleContextAction({
+      text: contextText,
+      label: clip.label,
+      hookTag: clip.hookTag,
+      clipIndex: idx,
+      totalClips: clips.length,
+    });
+
+    const tmpl = getDigitalHumanActionTemplate(classified.action);
+    return {
+      clipId: clip.id,
+      clipLabel: clip.label,
+      contextStage: classified.stage,
+      recommendedAction: classified.action,
+      recommendedIntensity: tmpl.recommendedIntensity,
+      reason: classified.reason,
+    };
+  });
+
+  // Primary recommendation focuses on the selected clip + active spoken script, or overall brief
+  const selectedSuggestion = selectedClipId
+    ? clipSuggestions.find((s) => s.clipId === selectedClipId)
+    : undefined;
+
+  if (selectedSuggestion && !scriptText.trim()) {
+    const selIdx = Math.max(
+      0,
+      clips.findIndex((c) => c.id === selectedClipId)
+    );
+    const selClip = clips[selIdx];
+    const subForSel = subtitles
+      .filter((s) => {
+        let sStart = 0;
+        for (let i = 0; i < selIdx; i++) sStart += clips[i].duration;
+        const sEnd = sStart + (selClip?.duration ?? 0);
+        const mid = s.startTime + s.duration / 2;
+        return mid >= sStart && mid <= sEnd;
+      })
+      .map((s) => s.text)
+      .join(' ');
+
+    const detail = classifySingleContextAction({
+      text: subForSel || brief,
+      label: selClip?.label,
+      hookTag: selClip?.hookTag,
+      clipIndex: selIdx,
+      totalClips: clips.length,
+    });
+
+    return {
+      primaryAction: detail.action,
+      secondaryAction: detail.secondary,
+      contextStage: detail.stage,
+      confidence: detail.confidence,
+      reason: detail.reason,
+      clipSuggestions,
+      source: 'heuristic',
+      analyzedAt: new Date().toISOString(),
+    };
+  }
+
+  const selIdx = selectedClipId ? clips.findIndex((c) => c.id === selectedClipId) : 0;
+  const selClip = selIdx >= 0 ? clips[selIdx] : undefined;
+  const combinedScript = [scriptText.trim(), brief.trim(), subtitles.map((s) => s.text).join(' ')]
+    .filter(Boolean)
+    .join(' ');
+
+  const overall = classifySingleContextAction({
+    text: combinedScript,
+    label: selClip?.label,
+    hookTag: selClip?.hookTag,
+    clipIndex: Math.max(0, selIdx),
+    totalClips: Math.max(1, clips.length),
+  });
+
+  return {
+    primaryAction: overall.action,
+    secondaryAction: overall.secondary,
+    contextStage: overall.stage,
+    confidence: overall.confidence,
+    reason: overall.reason,
+    clipSuggestions,
+    source: 'heuristic',
+    analyzedAt: new Date().toISOString(),
+  };
+}
+
+export interface DigitalHumanCameraPreset {
+  id: DigitalHumanCameraPresetId;
+  label: string;
+  englishTag: string;
+  badgeColor: string;
+  summary: string;
+  motion: DigitalHumanCameraMotion;
+}
+
+export const DIGITAL_HUMAN_CAMERA_PRESETS: DigitalHumanCameraPreset[] = [
+  {
+    id: 'none',
+    label: '固定机位',
+    englishTag: 'LOCKED',
+    badgeColor: '#94a3b8',
+    summary: '稳固演播室三脚架视角，保留数字人原始口播构图',
+    motion: {
+      enabled: false,
+      preset: 'none',
+      dollyAmount: 0,
+      panSpeed: 0,
+      shakeIntensity: 0,
+      shakeFrequency: 1.0,
+    },
+  },
+  {
+    id: 'push-in',
+    label: '缓推特写',
+    englishTag: 'PUSH IN',
+    badgeColor: '#38bdf8',
+    summary: '镜头随口播节奏平稳推进，逐步强化主播眼神聚焦与感染力',
+    motion: {
+      enabled: true,
+      preset: 'push-in',
+      dollyAmount: 0.16,
+      panSpeed: 0,
+      shakeIntensity: 0.08,
+      shakeFrequency: 1.0,
+    },
+  },
+  {
+    id: 'pull-out',
+    label: '拉远全景',
+    englishTag: 'PULL OUT',
+    badgeColor: '#34d399',
+    summary: '从特写景别流畅拉远至半身构图，适合阶段总结与视野展开',
+    motion: {
+      enabled: true,
+      preset: 'pull-out',
+      dollyAmount: -0.16,
+      panSpeed: 0,
+      shakeIntensity: 0.06,
+      shakeFrequency: 0.9,
+    },
+  },
+  {
+    id: 'pan-sweep',
+    label: '水平横摇',
+    englishTag: 'PAN',
+    badgeColor: '#a78bfa',
+    summary: '电影级横向平滑运镜平移，赋予静态主播肖像真实摄影机调度感',
+    motion: {
+      enabled: true,
+      preset: 'pan-sweep',
+      dollyAmount: 0.06,
+      panSpeed: 0.65,
+      shakeIntensity: 0.05,
+      shakeFrequency: 1.0,
+    },
+  },
+  {
+    id: 'handheld-shake',
+    label: '手持微抖',
+    englishTag: 'HANDHELD',
+    badgeColor: '#f59e0b',
+    summary: '模拟真人 Vlog 手持跟拍呼吸感微抖与细微水平角偏转，降低 AI 僵硬感',
+    motion: {
+      enabled: true,
+      preset: 'handheld-shake',
+      dollyAmount: 0.05,
+      panSpeed: 0.18,
+      shakeIntensity: 0.48,
+      shakeFrequency: 1.35,
+    },
+  },
+  {
+    id: 'dolly-zoom',
+    label: '节奏推摇',
+    englishTag: 'DYNAMIC',
+    badgeColor: '#fb7185',
+    summary: '高能推镜配合节拍横向摇移与轻抖动效，适合前 3 秒钩子与高潮爆点',
+    motion: {
+      enabled: true,
+      preset: 'dolly-zoom',
+      dollyAmount: 0.24,
+      panSpeed: -0.45,
+      shakeIntensity: 0.36,
+      shakeFrequency: 1.8,
+    },
+  },
+];
+
+export function getDigitalHumanCameraPreset(
+  presetId?: DigitalHumanCameraPresetId
+): DigitalHumanCameraPreset {
+  return (
+    DIGITAL_HUMAN_CAMERA_PRESETS.find((p) => p.id === presetId) ??
+    DIGITAL_HUMAN_CAMERA_PRESETS[0]
+  );
+}
+
+export function clampCameraMotion(
+  raw?: Partial<DigitalHumanCameraMotion> | null
+): DigitalHumanCameraMotion {
+  const clamp = (v: unknown, min: number, max: number, fb: number) => {
+    const n = typeof v === 'number' && Number.isFinite(v) ? v : fb;
+    return Number(Math.max(min, Math.min(max, n)).toFixed(2));
+  };
+  const validIds: DigitalHumanCameraPresetId[] = [
+    'none',
+    'push-in',
+    'pull-out',
+    'pan-sweep',
+    'handheld-shake',
+    'dolly-zoom',
+  ];
+  const preset =
+    raw?.preset && validIds.includes(raw.preset) ? raw.preset : 'none';
+  return {
+    enabled: Boolean(raw?.enabled),
+    preset,
+    dollyAmount: clamp(raw?.dollyAmount, -0.25, 0.35, 0),
+    panSpeed: clamp(raw?.panSpeed, -1.0, 1.0, 0),
+    shakeIntensity: clamp(raw?.shakeIntensity, 0, 1.0, 0),
+    shakeFrequency: clamp(raw?.shakeFrequency, 0.5, 3.0, 1.0),
+  };
+}
+
+export function computeDigitalHumanCameraTransform(
+  cameraMotion: DigitalHumanCameraMotion | undefined,
+  timeSec: number,
+  progress: number,
+  frameW: number,
+  frameH: number
+): {
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+  rotationRad: number;
+} {
+  if (!cameraMotion || !cameraMotion.enabled) {
+    return { zoom: 1, offsetX: 0, offsetY: 0, rotationRad: 0 };
+  }
+
+  const m = clampCameraMotion(cameraMotion);
+  const p = Math.max(0, Math.min(1, progress));
+  // Smooth ease-in-out curve for dolly & pan
+  const eased = p * p * (3 - 2 * p);
+
+  // Ensure sufficient overscan margin so pan/shake never reveals canvas border
+  const safetyMargin =
+    1 + Math.abs(m.panSpeed) * 0.085 + m.shakeIntensity * 0.045;
+
+  const dollyZoom =
+    m.dollyAmount >= 0
+      ? 1 + m.dollyAmount * eased
+      : 1 + Math.abs(m.dollyAmount) * (1 - eased);
+
+  const zoom = Math.max(safetyMargin, dollyZoom * safetyMargin);
+
+  // Horizontal pan sweep + gentle breathing Y pan
+  const panWave = Math.sin((p - 0.5) * Math.PI);
+  const panOffsetX = m.panSpeed * panWave * (frameW * 0.065);
+  const panOffsetY = Math.sin(p * Math.PI) * Math.abs(m.panSpeed) * (frameH * 0.014);
+
+  // Multi-harmonic organic handheld camera tremor
+  const freq = m.shakeFrequency;
+  const shakeAmpX = m.shakeIntensity * frameW * 0.016;
+  const shakeAmpY = m.shakeIntensity * frameH * 0.014;
+  const shakeX =
+    shakeAmpX *
+    (0.62 * Math.sin(timeSec * 11.4 * freq) + 0.38 * Math.cos(timeSec * 19.2 * freq + 1.1));
+  const shakeY =
+    shakeAmpY *
+    (0.58 * Math.cos(timeSec * 9.8 * freq + 0.5) + 0.42 * Math.sin(timeSec * 17.5 * freq));
+  const rotationRad =
+    m.shakeIntensity *
+    0.022 *
+    (0.65 * Math.sin(timeSec * 7.6 * freq) + 0.35 * Math.cos(timeSec * 13.8 * freq));
+
+  return {
+    zoom,
+    offsetX: panOffsetX + shakeX,
+    offsetY: panOffsetY + shakeY,
+    rotationRad,
   };
 }

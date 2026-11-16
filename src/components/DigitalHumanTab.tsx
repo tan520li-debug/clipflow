@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioLines,
   Check,
@@ -7,6 +7,7 @@ import {
   Layers,
   Loader2,
   Mic,
+  Move,
   Play,
   Sliders,
   Sparkles,
@@ -15,10 +16,14 @@ import {
   Upload,
   UserCheck,
   Volume2,
+  Wand2,
 } from 'lucide-react';
 import type {
   ClonedVoiceProfile,
   DigitalHumanActionId,
+  DigitalHumanActionRecommendation,
+  DigitalHumanCameraMotion,
+  DigitalHumanCameraPresetId,
   DigitalHumanClipConfig,
   DigitalHumanEmotionAnalysis,
   DigitalHumanEmotionId,
@@ -35,12 +40,16 @@ import type {
 } from '../types/studio';
 import {
   analyzeAudioProsodyForEmotion,
+  analyzeScriptForActionSuggestions,
   BUILTIN_DIGITAL_HUMAN_PRESETS,
+  clampCameraMotion,
   clampFacialMuscles,
   createDigitalHumanPresetProfile,
   DIGITAL_HUMAN_ACTION_TEMPLATES,
+  DIGITAL_HUMAN_CAMERA_PRESETS,
   DIGITAL_HUMAN_EMOTION_PRESETS,
   getDigitalHumanActionTemplate,
+  getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
 } from '../utils/digitalHumanAssets';
 import { renderDigitalHumanMiniStage } from '../utils/canvasRenderer';
@@ -78,6 +87,13 @@ interface DigitalHumanTabProps {
     action: DigitalHumanActionId,
     actionIntensity?: number
   ) => void;
+  onBatchApplyDigitalHumanActions?: (
+    updates: Array<{
+      clipId: string;
+      action: DigitalHumanActionId;
+      actionIntensity?: number;
+    }>
+  ) => void;
   onUpdateClipDigitalHumanEmotion: (
     clipId: string,
     payload: {
@@ -86,6 +102,10 @@ interface DigitalHumanTabProps {
       facialMuscles: DigitalHumanFacialMuscles;
       emotionSummary?: string;
     }
+  ) => void;
+  onUpdateClipDigitalHumanCameraMotion?: (
+    clipId: string,
+    cameraMotion: DigitalHumanCameraMotion
   ) => void;
   onInsertDigitalHumanClip: (params: {
     insertAt: DigitalHumanInsertTarget;
@@ -101,6 +121,7 @@ interface DigitalHumanTabProps {
       clonedVoiceId?: string;
     };
   }) => void;
+  brief?: string;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -212,8 +233,11 @@ export function DigitalHumanTab({
   onEmbedDigitalHumanPip,
   onRemoveClipDigitalHuman,
   onUpdateClipDigitalHumanAction,
+  onBatchApplyDigitalHumanActions,
   onUpdateClipDigitalHumanEmotion,
+  onUpdateClipDigitalHumanCameraMotion,
   onInsertDigitalHumanClip,
+  brief = '',
 }: DigitalHumanTabProps) {
   // Clone Creation Form State
   const [anchorName, setAnchorName] = useState('我的虚拟主播');
@@ -259,7 +283,7 @@ export function DigitalHumanTab({
   } | null>(null);
   const [isPreviewingMiniStage, setIsPreviewingMiniStage] = useState(false);
 
-  // Action Template Library State
+  // Action Template Library & Auto Action Suggestion State
   const [selectedAction, setSelectedAction] = useState<DigitalHumanActionId>(
     selectedClip?.digitalHuman?.action ?? digitalHumans[0]?.defaultAction ?? 'explain'
   );
@@ -267,6 +291,11 @@ export function DigitalHumanTab({
     selectedClip?.digitalHuman?.actionIntensity ?? 1.0
   );
   const [actionSyncNotice, setActionSyncNotice] = useState<string | null>(null);
+  const [autoActionSuggestEnabled, setAutoActionSuggestEnabled] = useState<boolean>(true);
+  const [aiActionSuggestion, setAiActionSuggestion] =
+    useState<DigitalHumanActionRecommendation | null>(null);
+  const [analyzingActionSuggestion, setAnalyzingActionSuggestion] = useState(false);
+  const [actionSuggestNote, setActionSuggestNote] = useState<string | null>(null);
 
   // Voice Emotion Matching & Facial Muscle Drive State
   const [emotionMatchEnabled, setEmotionMatchEnabled] = useState<boolean>(
@@ -285,6 +314,16 @@ export function DigitalHumanTab({
   const [analyzingEmotion, setAnalyzingEmotion] = useState(false);
   const [emotionAnalysis, setEmotionAnalysis] = useState<DigitalHumanEmotionAnalysis | null>(null);
   const [emotionNote, setEmotionNote] = useState<string | null>(null);
+
+  // Camera Motion Enhancement State
+  const [cameraMotion, setCameraMotion] = useState<DigitalHumanCameraMotion>(
+    clampCameraMotion(
+      selectedClip?.digitalHuman?.cameraMotion ??
+        digitalHumans[0]?.defaultCameraMotion ??
+        getDigitalHumanCameraPreset('none').motion
+    )
+  );
+  const [cameraNotice, setCameraNotice] = useState<string | null>(null);
 
   // Video Track Embedding State
   const [embedMode, setEmbedMode] = useState<'pip-overlay' | 'full-scene'>(
@@ -347,8 +386,50 @@ export function DigitalHumanTab({
       if (selectedClip.digitalHuman.facialMuscles) {
         setFacialMuscles(clampFacialMuscles(selectedClip.digitalHuman.facialMuscles));
       }
+      if (selectedClip.digitalHuman.cameraMotion) {
+        setCameraMotion(clampCameraMotion(selectedClip.digitalHuman.cameraMotion));
+      } else {
+        setCameraMotion(getDigitalHumanCameraPreset('none').motion);
+      }
     }
   }, [selectedClip?.id, selectedClip?.digitalHuman]);
+
+  // Instant script/context action recommendation (tracks brief, subtitles, scriptText, and selected clip)
+  const heuristicActionSuggestion = useMemo(
+    () =>
+      analyzeScriptForActionSuggestions({
+        brief,
+        scriptText,
+        clips,
+        subtitles,
+        selectedClipId: selectedClip?.id ?? null,
+      }),
+    [brief, scriptText, clips, subtitles, selectedClip?.id]
+  );
+
+  // Clear stale AI override when user edits scriptText or brief substantially
+  useEffect(() => {
+    setAiActionSuggestion(null);
+    setActionSuggestNote(null);
+  }, [brief, scriptText, platform]);
+
+  const activeActionRecommendation = useMemo<DigitalHumanActionRecommendation>(() => {
+    if (!aiActionSuggestion) return heuristicActionSuggestion;
+    if (selectedClip?.id) {
+      const clipRec = aiActionSuggestion.clipSuggestions.find(
+        (s) => s.clipId === selectedClip.id
+      );
+      if (clipRec) {
+        return {
+          ...aiActionSuggestion,
+          primaryAction: clipRec.recommendedAction,
+          contextStage: clipRec.contextStage,
+          reason: clipRec.reason,
+        };
+      }
+    }
+    return aiActionSuggestion;
+  }, [aiActionSuggestion, heuristicActionSuggestion, selectedClip?.id]);
 
   useEffect(() => {
     return () => {
@@ -393,7 +474,8 @@ export function DigitalHumanTab({
             act,
             selectedAction,
             emotionMatchEnabled ? selectedEmotion : 'neutral',
-            emotionMatchEnabled ? facialMuscles : undefined
+            emotionMatchEnabled ? facialMuscles : undefined,
+            cameraMotion
           );
         }
       }
@@ -401,7 +483,7 @@ export function DigitalHumanTab({
     };
     rafId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(rafId);
-  }, [activeAnchor, isPreviewingMiniStage, selectedAction, emotionMatchEnabled, selectedEmotion, facialMuscles]);
+  }, [activeAnchor, isPreviewingMiniStage, selectedAction, emotionMatchEnabled, selectedEmotion, facialMuscles, cameraMotion]);
 
   const handleUploadAnchorMaterial = async (file: File) => {
     setCloneMessage(null);
@@ -627,6 +709,7 @@ export function DigitalHumanTab({
       defaultAction: selectedAction,
       defaultEmotion: selectedEmotion,
       defaultFacialMuscles: facialMuscles,
+      defaultCameraMotion: cameraMotion,
     };
 
     onSaveDigitalHuman(newProfile);
@@ -733,9 +816,57 @@ export function DigitalHumanTab({
     emotion: selectedEmotion,
     facialMuscles,
     emotionSummary: emotionAnalysis?.toneSummary,
+    cameraMotion,
     spokenScript: scriptText.trim() || undefined,
     accentColor: activeAnchor.accentColor || '#fb7185',
   });
+
+  const syncCameraMotionToSelectedClip = (next: DigitalHumanCameraMotion) => {
+    if (selectedClip?.digitalHuman && onUpdateClipDigitalHumanCameraMotion) {
+      onUpdateClipDigitalHumanCameraMotion(selectedClip.id, next);
+    }
+  };
+
+  const handleToggleCameraMotion = () => {
+    const nextEnabled = !cameraMotion.enabled;
+    const basePreset =
+      nextEnabled && cameraMotion.preset === 'none'
+        ? getDigitalHumanCameraPreset('push-in').motion
+        : { ...cameraMotion, enabled: nextEnabled };
+    const clamped = clampCameraMotion(basePreset);
+    setCameraMotion(clamped);
+    setCameraNotice(
+      clamped.enabled
+        ? `已开启「${getDigitalHumanCameraPreset(clamped.preset).label}」运镜增强，将实时应用至数字人视频层。`
+        : '已切换为固定机位渲染。'
+    );
+    syncCameraMotionToSelectedClip(clamped);
+  };
+
+  const handleSelectCameraPreset = (presetId: DigitalHumanCameraPresetId) => {
+    const preset = getDigitalHumanCameraPreset(presetId);
+    const next = clampCameraMotion(preset.motion);
+    setCameraMotion(next);
+    setCameraNotice(
+      next.enabled
+        ? `已应用「${preset.label}」运镜预设${selectedClip?.digitalHuman ? `至片段「${selectedClip.label}」` : ''}。`
+        : '已恢复固定机位，不附加推拉抖动变换。'
+    );
+    syncCameraMotionToSelectedClip(next);
+  };
+
+  const handleCameraParamChange = (
+    key: 'dollyAmount' | 'panSpeed' | 'shakeIntensity' | 'shakeFrequency',
+    value: number
+  ) => {
+    const next = clampCameraMotion({
+      ...cameraMotion,
+      enabled: true,
+      [key]: value,
+    });
+    setCameraMotion(next);
+    syncCameraMotionToSelectedClip(next);
+  };
 
   const syncEmotionToSelectedClip = (
     enabled: boolean,
@@ -852,6 +983,91 @@ export function DigitalHumanTab({
     } else {
       setActionSyncNotice(`已选定「${tmpl.label}」动作模板，嵌入或插入视频轨时将自动绑定该姿态驱动。`);
     }
+  };
+
+  const handleAnalyzeScriptActions = async () => {
+    setAnalyzingActionSuggestion(true);
+    setActionSuggestNote(null);
+
+    let cursor = 0;
+    const serializedClips = clips.map((c, idx) => {
+      const start = cursor;
+      const end = cursor + c.duration;
+      cursor = end;
+      const matchedSubs = subtitles
+        .filter((s) => {
+          const mid = s.startTime + s.duration / 2;
+          return mid >= start && mid <= end;
+        })
+        .map((s) => s.text.trim())
+        .filter(Boolean)
+        .join(' ');
+      return {
+        id: c.id,
+        index: idx,
+        label: c.label,
+        duration: c.duration,
+        hookTag: c.hookTag,
+        subtitleText: matchedSubs,
+      };
+    });
+
+    try {
+      const res = await fetch('/api/digital-human/suggest-actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief,
+          scriptText: scriptText.trim(),
+          platform,
+          selectedClipId: selectedClip?.id ?? '',
+          clips: serializedClips,
+          subtitles: subtitles.map((s) => ({ startTime: s.startTime, text: s.text })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'AI 脚本动作分析失败');
+      }
+      setAiActionSuggestion(data as DigitalHumanActionRecommendation);
+      const recTmpl = getDigitalHumanActionTemplate(
+        data.primaryAction as DigitalHumanActionId
+      );
+      setActionSuggestNote(
+        `AI 已结合剧本语境高亮推荐「${recTmpl.label}」（${data.contextStage || '语境匹配'}）。`
+      );
+    } catch (err: unknown) {
+      setActionSuggestNote(
+        err instanceof Error
+          ? err.message
+          : '已启用本地脚本语境实时分析并高亮推荐动作。'
+      );
+    } finally {
+      setAnalyzingActionSuggestion(false);
+    }
+  };
+
+  const handleBatchApplyRecommendedActions = () => {
+    if (!onBatchApplyDigitalHumanActions) return;
+    const updates = activeActionRecommendation.clipSuggestions.map((s) => ({
+      clipId: s.clipId,
+      action: s.recommendedAction,
+      actionIntensity: s.recommendedIntensity,
+    }));
+    onBatchApplyDigitalHumanActions(updates);
+    if (selectedClip) {
+      const matched = updates.find((u) => u.clipId === selectedClip.id);
+      if (matched) {
+        setSelectedAction(matched.action);
+        if (typeof matched.actionIntensity === 'number') {
+          setActionIntensity(matched.actionIntensity);
+        }
+      }
+    }
+    const dhCount = clips.filter((c) => Boolean(c.digitalHuman)).length;
+    setActionSyncNotice(
+      `已根据脚本分镜语境，一键为时间线上 ${dhCount} 个数字人镜头匹配对应动作姿态！`
+    );
   };
 
   const resolvedAudioPayload =
@@ -1248,16 +1464,150 @@ export function DigitalHumanTab({
           </div>
         )}
 
-        {/* Digital Human Action Template Library */}
-        <div className="rounded-lg border border-zinc-800 bg-[#11141B] p-2.5 space-y-2">
+        {/* Digital Human Action Template Library + Auto Action Suggestion */}
+        <div className="rounded-lg border border-zinc-800 bg-[#11141B] p-2.5 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold text-zinc-200">
-              数字人动作模板库
-            </span>
-            <span className="text-[10px] font-medium text-cyan-300">
-              当前姿态：{getDigitalHumanActionTemplate(selectedAction).label}
-            </span>
+            <div className="min-w-0">
+              <span className="text-[11px] font-semibold text-zinc-200 flex items-center gap-1.5">
+                <span>数字人动作模板库</span>
+                {autoActionSuggestEnabled && (
+                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-400/50 text-[9px] font-semibold text-amber-200">
+                    自动推荐高亮
+                  </span>
+                )}
+              </span>
+              <span className="block text-[10px] font-medium text-cyan-300 mt-0.5">
+                当前姿态：{getDigitalHumanActionTemplate(selectedAction).label}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                disabled={analyzingActionSuggestion}
+                onClick={() => void handleAnalyzeScriptActions()}
+                className="px-2 py-1 rounded border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-[10px] font-semibold text-amber-200 flex items-center gap-1 transition-colors"
+                title="调用 AI 深度分析视频脚本并自动高亮推荐动作"
+              >
+                {analyzingActionSuggestion ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Wand2 className="w-3 h-3" />
+                )}
+                <span>{analyzingActionSuggestion ? '分析中' : 'AI 分析脚本'}</span>
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoActionSuggestEnabled}
+                aria-label="自动动作建议"
+                onClick={() => setAutoActionSuggestEnabled((v) => !v)}
+                className={`relative inline-flex h-4.5 w-8 shrink-0 items-center rounded-full border transition-colors ${
+                  autoActionSuggestEnabled
+                    ? 'bg-amber-500 border-amber-400'
+                    : 'bg-zinc-800 border-zinc-700'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${
+                    autoActionSuggestEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
+
+          {/* Context-aware Auto Action Recommendation Banner */}
+          {autoActionSuggestEnabled && (() => {
+            const primaryTmpl = getDigitalHumanActionTemplate(
+              activeActionRecommendation.primaryAction
+            );
+            const isAdopted = selectedAction === activeActionRecommendation.primaryAction;
+            const dhClipsCount = clips.filter((c) => Boolean(c.digitalHuman)).length;
+
+            return (
+              <div className="rounded-md border border-amber-400/50 bg-amber-500/10 p-2 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span className="text-[10px] font-semibold text-amber-100 truncate">
+                      语境【{activeActionRecommendation.contextStage}】→ 推荐「{primaryTmpl.label}」
+                    </span>
+                  </div>
+                  {isAdopted ? (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-semibold text-emerald-200 shrink-0">
+                      已采纳推荐
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSelectActionTemplate(activeActionRecommendation.primaryAction)
+                      }
+                      className="px-2 py-0.5 rounded bg-amber-400 hover:bg-amber-300 text-zinc-950 text-[10px] font-bold shrink-0 transition-colors"
+                    >
+                      采纳「{primaryTmpl.label}」
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-amber-100/85 leading-snug">
+                  {activeActionRecommendation.reason}
+                </p>
+
+                {actionSuggestNote && (
+                  <p className="text-[9px] text-amber-300/90 leading-snug">
+                    {actionSuggestNote}
+                  </p>
+                )}
+
+                {activeActionRecommendation.clipSuggestions.length > 0 && (
+                  <div className="pt-1 border-t border-amber-400/20 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[9px] text-amber-200/80">
+                        分镜脚本语境动作映射（点击高亮应用）：
+                      </span>
+                      {dhClipsCount > 0 && onBatchApplyDigitalHumanActions && (
+                        <button
+                          type="button"
+                          onClick={handleBatchApplyRecommendedActions}
+                          className="text-[9px] font-semibold text-amber-300 hover:text-amber-100 underline underline-offset-2 shrink-0"
+                        >
+                          一键同步全部数字人镜头
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {activeActionRecommendation.clipSuggestions.map((cs, idx) => {
+                        const actTmpl = getDigitalHumanActionTemplate(cs.recommendedAction);
+                        const isCurClip = selectedClip?.id === cs.clipId;
+                        return (
+                          <button
+                            key={cs.clipId}
+                            type="button"
+                            onClick={() => handleSelectActionTemplate(cs.recommendedAction)}
+                            title={`${cs.clipLabel}（${cs.contextStage}）：${cs.reason}`}
+                            className={`px-1.5 py-0.5 rounded border text-[9px] flex items-center gap-1 transition-colors ${
+                              isCurClip
+                                ? 'border-amber-300 bg-amber-400/25 text-amber-100 font-semibold'
+                                : 'border-zinc-700/80 bg-[#0B0D10]/80 text-zinc-300 hover:border-amber-400/60'
+                            }`}
+                          >
+                            <span className="truncate max-w-[64px]">
+                              {idx + 1}.{cs.clipLabel}
+                            </span>
+                            <span className="text-amber-300 font-semibold">
+                              · {actTmpl.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div
             className="grid grid-cols-3 gap-1.5"
@@ -1266,6 +1616,14 @@ export function DigitalHumanTab({
           >
             {DIGITAL_HUMAN_ACTION_TEMPLATES.map((tmpl) => {
               const isSelected = selectedAction === tmpl.id;
+              const isPrimaryRec =
+                autoActionSuggestEnabled &&
+                activeActionRecommendation.primaryAction === tmpl.id;
+              const isSecondaryRec =
+                autoActionSuggestEnabled &&
+                !isPrimaryRec &&
+                activeActionRecommendation.secondaryAction === tmpl.id;
+
               return (
                 <button
                   key={tmpl.id}
@@ -1273,11 +1631,21 @@ export function DigitalHumanTab({
                   role="radio"
                   aria-checked={isSelected}
                   onClick={() => handleSelectActionTemplate(tmpl.id)}
-                  title={tmpl.summary}
+                  title={
+                    isPrimaryRec
+                      ? `AI 脚本语境主推：${activeActionRecommendation.reason}`
+                      : tmpl.summary
+                  }
                   className={`group rounded-lg border p-1 text-left transition-all flex flex-col gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
-                    isSelected
-                      ? 'border-cyan-400 bg-cyan-950/35 ring-1 ring-cyan-400/35'
-                      : 'border-zinc-800 bg-[#0B0D10] hover:border-zinc-600'
+                    isSelected && isPrimaryRec
+                      ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-amber-400/75 shadow-[0_0_14px_rgba(251,191,36,0.3)]'
+                      : isSelected
+                        ? 'border-cyan-400 bg-cyan-950/35 ring-1 ring-cyan-400/35'
+                        : isPrimaryRec
+                          ? 'border-amber-400 bg-amber-500/15 ring-2 ring-amber-400/55 shadow-[0_0_14px_rgba(251,191,36,0.28)]'
+                          : isSecondaryRec
+                            ? 'border-amber-500/45 bg-amber-950/15 hover:border-amber-400/80'
+                            : 'border-zinc-800 bg-[#0B0D10] hover:border-zinc-600'
                   }`}
                 >
                   <div className="relative w-full h-11 rounded overflow-hidden bg-zinc-900">
@@ -1286,6 +1654,16 @@ export function DigitalHumanTab({
                       alt={`${tmpl.label}动作缩略图`}
                       className="w-full h-full object-cover"
                     />
+                    {isPrimaryRec && (
+                      <span className="absolute top-0.5 left-0.5 px-1 py-0.2 rounded bg-amber-400 text-[8px] font-bold text-zinc-950 shadow">
+                        推荐
+                      </span>
+                    )}
+                    {isSecondaryRec && (
+                      <span className="absolute top-0.5 left-0.5 px-1 py-0.2 rounded bg-amber-950/90 border border-amber-400/50 text-[8px] font-semibold text-amber-200">
+                        备选
+                      </span>
+                    )}
                     <span
                       className="absolute top-0.5 right-0.5 px-1 py-0.2 rounded text-[8px] font-mono-nums font-bold text-zinc-950"
                       style={{ backgroundColor: tmpl.badgeColor }}
@@ -1296,12 +1674,20 @@ export function DigitalHumanTab({
                   <div className="flex items-center justify-between px-0.5">
                     <span
                       className={`text-[11px] font-semibold ${
-                        isSelected ? 'text-cyan-100' : 'text-zinc-300'
+                        isSelected
+                          ? 'text-cyan-100'
+                          : isPrimaryRec
+                            ? 'text-amber-200'
+                            : 'text-zinc-300'
                       }`}
                     >
                       {tmpl.label}
                     </span>
-                    {isSelected && <Check className="w-3 h-3 text-cyan-300 shrink-0" />}
+                    {isSelected ? (
+                      <Check className="w-3 h-3 text-cyan-300 shrink-0" />
+                    ) : isPrimaryRec ? (
+                      <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
+                    ) : null}
                   </div>
                 </button>
               );
@@ -1576,6 +1962,164 @@ export function DigitalHumanTab({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Camera Motion Enhancement (Dolly Push/Pull, Pan Sweep, Handheld Shake) */}
+        <div className="rounded-lg border border-sky-500/30 bg-[#11141B] p-2.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[11px] font-semibold text-sky-200 flex items-center gap-1.5">
+                <Move className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>运镜增强（数字人视频层）</span>
+              </span>
+              <span className="block text-[10px] text-zinc-400 mt-0.5">
+                配置推拉、平移或手持抖动参数并自动渲染至视频层
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={cameraMotion.enabled}
+              aria-label="运镜增强"
+              onClick={handleToggleCameraMotion}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
+                cameraMotion.enabled
+                  ? 'bg-sky-500 border-sky-400'
+                  : 'bg-zinc-800 border-zinc-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  cameraMotion.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-1">
+            {DIGITAL_HUMAN_CAMERA_PRESETS.map((preset) => {
+              const isSel =
+                cameraMotion.preset === preset.id &&
+                (preset.id === 'none' ? !cameraMotion.enabled : cameraMotion.enabled);
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleSelectCameraPreset(preset.id)}
+                  title={preset.summary}
+                  className={`py-1.5 px-1.5 rounded border text-left transition-colors ${
+                    isSel
+                      ? 'border-sky-400 bg-sky-500/20 text-sky-100'
+                      : 'border-zinc-800 bg-[#0B0D10] text-zinc-300 hover:border-zinc-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] font-semibold truncate">{preset.label}</span>
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: preset.badgeColor }}
+                    />
+                  </div>
+                  <span className="block text-[8px] font-mono-nums text-zinc-400 mt-0.5 truncate">
+                    {preset.englishTag}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="text-[10px] text-zinc-400 leading-snug">
+            {getDigitalHumanCameraPreset(cameraMotion.preset).summary}
+          </p>
+
+          {cameraMotion.enabled && (
+            <div className="space-y-1.5 pt-1.5 border-t border-zinc-800/80">
+              <div className="grid grid-cols-2 gap-x-2.5 gap-y-1.5">
+                <div>
+                  <div className="flex justify-between text-[9px] text-zinc-400">
+                    <span>相机推拉 (Dolly)</span>
+                    <span className="font-mono-nums text-sky-300">
+                      {cameraMotion.dollyAmount > 0
+                        ? `推进 +${Math.round(cameraMotion.dollyAmount * 100)}%`
+                        : cameraMotion.dollyAmount < 0
+                          ? `拉远 ${Math.round(cameraMotion.dollyAmount * 100)}%`
+                          : '0%'}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-0.25}
+                    max={0.35}
+                    step={0.02}
+                    value={cameraMotion.dollyAmount}
+                    onChange={(e) => handleCameraParamChange('dollyAmount', Number(e.target.value))}
+                    className="w-full accent-sky-400"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-[9px] text-zinc-400">
+                    <span>横向平移 (Pan)</span>
+                    <span className="font-mono-nums text-sky-300">
+                      {cameraMotion.panSpeed > 0
+                        ? `右移 +${cameraMotion.panSpeed.toFixed(2)}`
+                        : cameraMotion.panSpeed < 0
+                          ? `左移 ${cameraMotion.panSpeed.toFixed(2)}`
+                          : '0.00'}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-1.0}
+                    max={1.0}
+                    step={0.05}
+                    value={cameraMotion.panSpeed}
+                    onChange={(e) => handleCameraParamChange('panSpeed', Number(e.target.value))}
+                    className="w-full accent-sky-400"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-[9px] text-zinc-400">
+                    <span>抖动幅度 (Shake)</span>
+                    <span className="font-mono-nums text-sky-300">
+                      {Math.round(cameraMotion.shakeIntensity * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1.0}
+                    step={0.04}
+                    value={cameraMotion.shakeIntensity}
+                    onChange={(e) => handleCameraParamChange('shakeIntensity', Number(e.target.value))}
+                    className="w-full accent-sky-400"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-[9px] text-zinc-400">
+                    <span>抖动节奏频率</span>
+                    <span className="font-mono-nums text-sky-300">
+                      {cameraMotion.shakeFrequency.toFixed(1)}x
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={3.0}
+                    step={0.1}
+                    value={cameraMotion.shakeFrequency}
+                    onChange={(e) => handleCameraParamChange('shakeFrequency', Number(e.target.value))}
+                    className="w-full accent-sky-400"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {cameraNotice && (
+            <div className="rounded border border-sky-500/35 bg-sky-950/25 px-2 py-1 text-[10px] text-sky-200 leading-snug">
+              {cameraNotice}
             </div>
           )}
         </div>

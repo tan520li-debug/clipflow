@@ -15,6 +15,7 @@ import type {
   BgmPreset,
   ClonedVoiceProfile,
   DigitalHumanActionId,
+  DigitalHumanCameraMotion,
   DigitalHumanClipConfig,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
@@ -1274,6 +1275,31 @@ export default function App() {
     }));
   };
 
+  const handleBatchApplyDigitalHumanActions = (
+    updates: Array<{
+      clipId: string;
+      action: DigitalHumanActionId;
+      actionIntensity?: number;
+    }>
+  ) => {
+    const map = new Map(updates.map((u) => [u.clipId, u]));
+    updateCurrentProject((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) => {
+        const match = map.get(c.id);
+        if (!match || !c.digitalHuman) return c;
+        return {
+          ...c,
+          digitalHuman: {
+            ...c.digitalHuman,
+            action: match.action,
+            actionIntensity: match.actionIntensity ?? c.digitalHuman.actionIntensity ?? 1,
+          },
+        };
+      }),
+    }));
+  };
+
   const handleUpdateClipDigitalHumanEmotion = (
     clipId: string,
     payload: {
@@ -1295,6 +1321,26 @@ export default function App() {
                 emotion: payload.emotion,
                 facialMuscles: payload.facialMuscles,
                 emotionSummary: payload.emotionSummary,
+              },
+            }
+          : c
+      ),
+    }));
+  };
+
+  const handleUpdateClipDigitalHumanCameraMotion = (
+    clipId: string,
+    cameraMotion: DigitalHumanCameraMotion
+  ) => {
+    updateCurrentProject((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) =>
+        c.id === clipId && c.digitalHuman
+          ? {
+              ...c,
+              digitalHuman: {
+                ...c.digitalHuman,
+                cameraMotion,
               },
             }
           : c
@@ -1576,8 +1622,11 @@ export default function App() {
               onEmbedDigitalHumanPip={handleEmbedDigitalHumanPip}
               onRemoveClipDigitalHuman={handleRemoveClipDigitalHuman}
               onUpdateClipDigitalHumanAction={handleUpdateClipDigitalHumanAction}
+              onBatchApplyDigitalHumanActions={handleBatchApplyDigitalHumanActions}
               onUpdateClipDigitalHumanEmotion={handleUpdateClipDigitalHumanEmotion}
+              onUpdateClipDigitalHumanCameraMotion={handleUpdateClipDigitalHumanCameraMotion}
               onInsertDigitalHumanClip={handleInsertDigitalHumanClip}
+              brief={brief}
             />
           </div>
 

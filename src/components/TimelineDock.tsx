@@ -11,6 +11,7 @@ import type {
 import { formatTimecode, getTotalDuration } from '../utils/autoEditEngine';
 import {
   getDigitalHumanActionTemplate,
+  getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
 } from '../utils/digitalHumanAssets';
 
@@ -253,6 +254,11 @@ export function TimelineDock({
                               clip.digitalHuman.emotion !== 'neutral'
                                 ? `/${getDigitalHumanEmotionPreset(clip.digitalHuman.emotion).label}`
                                 : ''
+                            }${
+                              clip.digitalHuman?.cameraMotion?.enabled &&
+                              clip.digitalHuman.cameraMotion.preset !== 'none'
+                                ? `/${getDigitalHumanCameraPreset(clip.digitalHuman.cameraMotion.preset).label}`
+                                : ''
                             }]`
                           : hasDhPip
                             ? ` · +数字人PiP[${getDigitalHumanActionTemplate(clip.digitalHuman?.action).label}${
@@ -260,6 +266,11 @@ export function TimelineDock({
                                 clip.digitalHuman?.emotion &&
                                 clip.digitalHuman.emotion !== 'neutral'
                                   ? `/${getDigitalHumanEmotionPreset(clip.digitalHuman.emotion).label}`
+                                  : ''
+                              }${
+                                clip.digitalHuman?.cameraMotion?.enabled &&
+                                clip.digitalHuman.cameraMotion.preset !== 'none'
+                                  ? `/${getDigitalHumanCameraPreset(clip.digitalHuman.cameraMotion.preset).label}`
                                   : ''
                               }]`
                             : ''}

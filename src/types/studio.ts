@@ -154,6 +154,23 @@ export type DigitalHumanEmotionId =
   | 'suspense'
   | 'warm';
 
+export type DigitalHumanCameraPresetId =
+  | 'none'
+  | 'push-in'
+  | 'pull-out'
+  | 'pan-sweep'
+  | 'handheld-shake'
+  | 'dolly-zoom';
+
+export interface DigitalHumanCameraMotion {
+  enabled: boolean;
+  preset: DigitalHumanCameraPresetId;
+  dollyAmount: number; // -0.25 to 0.35
+  panSpeed: number; // -1.0 to 1.0
+  shakeIntensity: number; // 0.0 to 1.0
+  shakeFrequency: number; // 0.5 to 3.0
+}
+
 export interface DigitalHumanFacialMuscles {
   jawOpenness: number; // 0.5 to 1.6
   browLift: number; // -1.0 to 1.0
@@ -178,6 +195,26 @@ export interface DigitalHumanEmotionAnalysis {
   analyzedAt: string;
 }
 
+export interface DigitalHumanClipActionSuggestion {
+  clipId: string;
+  clipLabel: string;
+  contextStage: string;
+  recommendedAction: DigitalHumanActionId;
+  recommendedIntensity: number;
+  reason: string;
+}
+
+export interface DigitalHumanActionRecommendation {
+  primaryAction: DigitalHumanActionId;
+  secondaryAction?: DigitalHumanActionId;
+  contextStage: string;
+  confidence: number;
+  reason: string;
+  clipSuggestions: DigitalHumanClipActionSuggestion[];
+  source: 'ai' | 'heuristic';
+  analyzedAt: string;
+}
+
 export interface DigitalHumanProfile {
   id: string;
   name: string;
@@ -197,6 +234,7 @@ export interface DigitalHumanProfile {
   defaultAction?: DigitalHumanActionId;
   defaultEmotion?: DigitalHumanEmotionId;
   defaultFacialMuscles?: DigitalHumanFacialMuscles;
+  defaultCameraMotion?: DigitalHumanCameraMotion;
 }
 
 export interface DigitalHumanClipConfig {
@@ -217,6 +255,7 @@ export interface DigitalHumanClipConfig {
   emotion?: DigitalHumanEmotionId;
   facialMuscles?: DigitalHumanFacialMuscles;
   emotionSummary?: string;
+  cameraMotion?: DigitalHumanCameraMotion;
   spokenScript?: string;
   linkedCueId?: string;
   accentColor?: string;

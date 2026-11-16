@@ -2569,6 +2569,219 @@ ${metricsSummary}
   }
 });
 
+app.post('/api/digital-human/suggest-actions', async (req, res) => {
+  try {
+    const {
+      brief = '',
+      scriptText = '',
+      platform = 'douyin',
+      selectedClipId = '',
+      clips = [],
+      subtitles = [],
+    } = req.body ?? {};
+
+    const cleanBrief = typeof brief === 'string' ? brief.trim() : '';
+    const cleanScript = typeof scriptText === 'string' ? scriptText.trim() : '';
+    const safeClips = Array.isArray(clips) ? clips.slice(0, 20) : [];
+    const safeSubs = Array.isArray(subtitles) ? subtitles.slice(0, 40) : [];
+
+    if (!cleanBrief && !cleanScript && safeClips.length === 0 && safeSubs.length === 0) {
+      return res.status(400).json({
+        error: '请先输入创意脚本、字幕文案或时间线分镜片段后再分析动作建议。',
+      });
+    }
+
+    const validActions = new Set(['explain', 'point', 'wave', 'amaze', 'nod', 'thumbs-up']);
+    const intensityDefaults: Record<string, number> = {
+      explain: 1.0,
+      point: 1.15,
+      wave: 1.1,
+      amaze: 1.25,
+      nod: 0.95,
+      'thumbs-up': 1.15,
+    };
+
+    const clipsPrompt = safeClips
+      .map(
+        (
+          c: {
+            id?: string;
+            label?: string;
+            duration?: number;
+            hookTag?: string;
+            subtitleText?: string;
+          },
+          idx: number
+        ) =>
+          `[${idx + 1}] id=${c.id || `clip-${idx}`} 名称="${c.label || '片段'}" 时长=${Number(c.duration || 3).toFixed(1)}s 标签="${c.hookTag || '无'}" 台词="${(c.subtitleText || '').slice(0, 80)}"${c.id === selectedClipId ? ' (当前选中镜头)' : ''}`
+      )
+      .join('\n');
+
+    const subsPrompt = safeSubs
+      .map(
+        (s: { startTime?: number; text?: string }) =>
+          `${Number(s.startTime || 0).toFixed(1)}s: ${(s.text || '').slice(0, 80)}`
+      )
+      .join('\n');
+
+    const ai = getGeminiClient();
+    const requestPayload = {
+      contents: `你是一位资深的短视频数字人导演与肢体动作编排师。请深度分析以下视频脚本、字幕台词和分镜结构，为当前编辑语境及每个分镜自动推荐最契合的数字人动作姿态。
+
+可选动作 ID 严格限定为以下 6 种：
+- "explain"（讲解）：干货科普、原理拆解、条理化阐述
+- "point"（指引）：引导观众看实拍画面、产品细节、步骤演示、屏幕对比
+- "wave"（挥手）：开场问候、3秒吸睛打招呼、告别互动
+- "amaze"（惊叹）：高潮爆点、数据反转、惊艳揭秘、强感叹句瞬间
+- "nod"（点头）：口碑背书、实测肯定、理性认同、阶段小结
+- "thumbs-up"（点赞）：片尾转化、号召关注点赞、强烈推荐入手
+
+目标平台：${String(platform)}
+创意脚本简述：${cleanBrief || '（未填写）'}
+数字人口播台词：${cleanScript || '（未单独填写）'}
+
+时间线分镜片段：
+${clipsPrompt || '（暂无分镜列表）'}
+
+时间轴字幕台词：
+${subsPrompt || '（暂无字幕）'}
+
+请返回 JSON：
+- primaryAction: 当前最优先推荐的动作 ID（若选中了特定镜头，优先匹配该镜头语境；否则结合口播台词与全局剧本高潮/讲解节奏）。
+- secondaryAction: 备选动作 ID（不能与 primaryAction 相同）。
+- contextStage: 4~8字中文语境阶段标签，例如 "细节讲解"、"高潮爆点"、"开场招呼"、"干货阐述"、"片尾号召"、"观点认同"。
+- confidence: 0.72 ~ 0.99 推荐置信度。
+- reason: 30~65字中文理由，明确说明为什么该脚本语境适合此动作。
+- clipSuggestions: 针对上述时间线分镜片段的逐镜动作推荐数组，每项包含 clipId, clipLabel, contextStage, recommendedAction, recommendedIntensity (0.8~1.35), reason (20字以内简明理由)。`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            primaryAction: { type: Type.STRING },
+            secondaryAction: { type: Type.STRING },
+            contextStage: { type: Type.STRING },
+            confidence: { type: Type.NUMBER },
+            reason: { type: Type.STRING },
+            clipSuggestions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  clipId: { type: Type.STRING },
+                  clipLabel: { type: Type.STRING },
+                  contextStage: { type: Type.STRING },
+                  recommendedAction: { type: Type.STRING },
+                  recommendedIntensity: { type: Type.NUMBER },
+                  reason: { type: Type.STRING },
+                },
+                required: ['clipId', 'recommendedAction', 'contextStage', 'reason'],
+              },
+            },
+          },
+          required: ['primaryAction', 'contextStage', 'reason', 'clipSuggestions'],
+        },
+      },
+    };
+
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        ...requestPayload,
+      });
+    } catch (firstErr: unknown) {
+      if (isServiceBusyError(firstErr)) {
+        await new Promise((r) => setTimeout(r, 600));
+        response = await ai.models.generateContent({
+          model: 'gemini-3.1-flash-lite',
+          ...requestPayload,
+        });
+      } else {
+        throw firstErr;
+      }
+    }
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      const rawJson = (response.text || '{}')
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '');
+      parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    } catch {
+      const jsonMatch = (response.text || '').match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        } catch {
+          parsed = {};
+        }
+      }
+    }
+
+    const rawPrimary = String(parsed?.primaryAction || 'explain');
+    const primaryAction = validActions.has(rawPrimary) ? rawPrimary : 'explain';
+    const rawSecondary = String(parsed?.secondaryAction || '');
+    const secondaryAction =
+      validActions.has(rawSecondary) && rawSecondary !== primaryAction ? rawSecondary : undefined;
+
+    const rawClipSuggestions = Array.isArray(parsed?.clipSuggestions) ? parsed.clipSuggestions : [];
+    const clipSuggestions = rawClipSuggestions.map((item: Record<string, unknown>, idx: number) => {
+      const rawAct = String(item?.recommendedAction || primaryAction);
+      const act = validActions.has(rawAct) ? rawAct : primaryAction;
+      const inten = Number(item?.recommendedIntensity);
+      return {
+        clipId: String(item?.clipId || safeClips[idx]?.id || `clip-${idx}`),
+        clipLabel: String(item?.clipLabel || safeClips[idx]?.label || `片段 ${idx + 1}`),
+        contextStage: String(item?.contextStage || '语境匹配'),
+        recommendedAction: act,
+        recommendedIntensity:
+          Number.isFinite(inten) && inten >= 0.6 && inten <= 1.4
+            ? Number(inten.toFixed(2))
+            : intensityDefaults[act] ?? 1.0,
+        reason: String(item?.reason || '契合当前镜头口播语境与画面节奏。'),
+      };
+    });
+
+    const confNum = Number(parsed?.confidence);
+    return res.json({
+      primaryAction,
+      secondaryAction,
+      contextStage:
+        typeof parsed?.contextStage === 'string' && parsed.contextStage.trim()
+          ? parsed.contextStage.trim()
+          : '语境匹配',
+      confidence:
+        Number.isFinite(confNum) && confNum >= 0.5 && confNum <= 0.99
+          ? Number(confNum.toFixed(2))
+          : 0.91,
+      reason:
+        typeof parsed?.reason === 'string' && parsed.reason.trim()
+          ? parsed.reason.trim()
+          : '已结合当前视频脚本语义与分镜节奏推荐最契合的数字人动作姿态。',
+      clipSuggestions,
+      source: 'ai',
+      analyzedAt: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    console.error('[api/digital-human/suggest-actions] error:', err);
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'AI 动作推荐调用额度已达上限，已自动切换为本地脚本语境实时分析推荐。',
+      });
+    }
+    if (isServiceBusyError(err)) {
+      return res.status(503).json({
+        error: 'AI 模型当前处于请求高峰，已自动切换为本地脚本语境实时分析并高亮推荐动作。',
+      });
+    }
+    const message =
+      err instanceof Error ? err.message : '自动动作建议分析失败，请稍后重试。';
+    return res.status(500).json({ error: message });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
