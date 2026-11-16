@@ -3,16 +3,159 @@ import type {
   AutoEditApiResponse,
   BgmPreset,
   ColorFilter,
+  ContentLanguage,
   MediaAsset,
   MotionType,
+  PlatformGroup,
   PlatformId,
   PlatformProjectState,
   SubtitleSegment,
   SubtitleStyle,
   TimelineClip,
   TransitionType,
+  UiLanguage,
   VoiceoverCue,
+  VoicePresetOption,
 } from '../types/studio';
+
+export const ALL_PLATFORM_IDS: PlatformId[] = [
+  'douyin',
+  'xiaohongshu',
+  'tiktok',
+  'instagram',
+  'facebook',
+];
+
+export const PLATFORM_GROUPS: Array<{
+  id: PlatformGroup;
+  platforms: PlatformId[];
+}> = [
+  { id: 'domestic', platforms: ['douyin', 'xiaohongshu'] },
+  { id: 'global', platforms: ['tiktok', 'instagram', 'facebook'] },
+];
+
+export const VOICE_PRESET_CATALOG: VoicePresetOption[] = [
+  // Chinese (Mandarin) Voices
+  {
+    id: 'zh-kore',
+    language: 'zh-CN',
+    baseVoice: 'Kore',
+    labelZh: '星澜 · 温润知性女声',
+    labelEn: 'Xinglan · Warm Female Studio',
+    styleTagZh: '好物科普 / 温柔穿透',
+    styleTagEn: 'Mandarin · Warm & Clear',
+    personaHint: 'Speak in natural, warm, articulate Mandarin Chinese with conversational studio clarity.',
+  },
+  {
+    id: 'zh-zephyr',
+    language: 'zh-CN',
+    baseVoice: 'Zephyr',
+    labelZh: '清风 · 轻快种草青年',
+    labelEn: 'Qingfeng · Bright Youth',
+    styleTagZh: '小红书 / 日常分享',
+    styleTagEn: 'Mandarin · Crisp & Light',
+    personaHint: 'Speak in upbeat, light, approachable Mandarin Chinese suited for lifestyle and product notes.',
+  },
+  {
+    id: 'zh-puck',
+    language: 'zh-CN',
+    baseVoice: 'Puck',
+    labelZh: '元气阿橘 · 高燃钩子音',
+    labelEn: 'Aju · Energetic Hook',
+    styleTagZh: '抖音爆款 / 前3秒抓耳',
+    styleTagEn: 'Mandarin · Punchy Hook',
+    personaHint: 'Speak in lively, expressive Mandarin Chinese with energetic 3-second short-video hook cadence.',
+  },
+  {
+    id: 'zh-charon',
+    language: 'zh-CN',
+    baseVoice: 'Charon',
+    labelZh: '阿澈 · 沉稳科技男声',
+    labelEn: 'Ache · Calm Tech Host',
+    styleTagZh: '数码评测 / 深度拆解',
+    styleTagEn: 'Mandarin · Steady Baritone',
+    personaHint: 'Speak in calm, authoritative, well-paced Mandarin Chinese suited for tech reviews and insights.',
+  },
+  {
+    id: 'zh-fenrir',
+    language: 'zh-CN',
+    baseVoice: 'Fenrir',
+    labelZh: '墨沉 · 电影磁性旁白',
+    labelEn: 'Mochen · Cinema Narrator',
+    styleTagZh: '故事叙事 / 高级质感',
+    styleTagEn: 'Mandarin · Deep Cinema',
+    personaHint: 'Speak in deep, resonant, cinematic Mandarin Chinese with deliberate storytelling pauses.',
+  },
+  // English Voices
+  {
+    id: 'en-kore',
+    language: 'en',
+    baseVoice: 'Kore',
+    labelZh: 'Claire · 美式亲和女声',
+    labelEn: 'Claire · Warm Studio Host',
+    styleTagZh: 'Reels 分享 / 自然清楚',
+    styleTagEn: 'English · Warm & Conversational',
+    personaHint: 'Speak in fluent, warm American English with crisp modern creator pacing.',
+  },
+  {
+    id: 'en-zephyr',
+    language: 'en',
+    baseVoice: 'Zephyr',
+    labelZh: 'Skyler · 明快生活方式音',
+    labelEn: 'Skyler · Bright Creator',
+    styleTagZh: 'TikTok Vlog / 清爽节奏',
+    styleTagEn: 'English · Upbeat & Airy',
+    personaHint: 'Speak in bright, natural English with effortless lifestyle vlog rhythm.',
+  },
+  {
+    id: 'en-puck',
+    language: 'en',
+    baseVoice: 'Puck',
+    labelZh: 'Leo · 高能爆款开场音',
+    labelEn: 'Leo · Snappy Hook Narrator',
+    styleTagZh: 'TikTok 快切 / 强吸睛',
+    styleTagEn: 'English · Punchy & Energetic',
+    personaHint: 'Speak in dynamic, high-retention American English designed for snappy TikTok hooks.',
+  },
+  {
+    id: 'en-charon',
+    language: 'en',
+    baseVoice: 'Charon',
+    labelZh: 'Marcus · 理性科技解说音',
+    labelEn: 'Marcus · Tech Documentary',
+    styleTagZh: '评测对比 / 沉稳可信',
+    styleTagEn: 'English · Measured & Credible',
+    personaHint: 'Speak in composed, articulate English with trustworthy product-review authority.',
+  },
+  {
+    id: 'en-fenrir',
+    language: 'en',
+    baseVoice: 'Fenrir',
+    labelZh: 'Julian · 电影深沉低音',
+    labelEn: 'Julian · Deep Cinema Baritone',
+    styleTagZh: '剧情旁白 / 电影感',
+    styleTagEn: 'English · Cinematic Baritone',
+    personaHint: 'Speak in rich, cinematic English baritone with dramatic emphasis and studio poise.',
+  },
+];
+
+export function getVoicePresetById(id?: string): VoicePresetOption | undefined {
+  if (!id) return undefined;
+  return VOICE_PRESET_CATALOG.find((v) => v.id === id);
+}
+
+export function resolveVoicePresetForSelection(
+  voice: VoicePresetOption['baseVoice'] | undefined,
+  contentLang: ContentLanguage,
+  presetId?: string
+): VoicePresetOption {
+  const exact = getVoicePresetById(presetId);
+  if (exact) return exact;
+  const matched = VOICE_PRESET_CATALOG.find(
+    (v) => v.language === contentLang && v.baseVoice === (voice ?? 'Kore')
+  );
+  return matched ?? VOICE_PRESET_CATALOG[0];
+}
 
 export const BUILTIN_MEDIA_ASSETS: MediaAsset[] = [
   {
@@ -81,42 +224,97 @@ export const PLATFORM_META: Record<
   PlatformId,
   {
     id: PlatformId;
+    group: PlatformGroup;
     label: string;
+    labelEn: string;
     shortLabel: string;
+    shortLabelEn: string;
     defaultSubtitleStyle: SubtitleStyle;
     defaultBgm: BgmPreset;
     defaultBpm: number;
     specSummary: string;
+    specSummaryEn: string;
+    estimatedCampaignValueUsd: number;
   }
 > = {
   douyin: {
     id: 'douyin',
+    group: 'domestic',
     label: '抖音 Douyin',
+    labelEn: 'Douyin (抖音)',
     shortLabel: '抖音',
+    shortLabelEn: 'Douyin',
     defaultSubtitleStyle: 'douyin-yellow',
     defaultBgm: 'upbeat-128',
     defaultBpm: 128,
     specSummary: '9:16 竖屏 · 黄金前3秒强钩子 · 中文黄字黑边动效字幕',
+    specSummaryEn: '9:16 Vertical · 3s Golden Hook · Classic Yellow-Outline Captions',
+    estimatedCampaignValueUsd: 185,
+  },
+  xiaohongshu: {
+    id: 'xiaohongshu',
+    group: 'domestic',
+    label: '小红书',
+    labelEn: 'Xiaohongshu (RED)',
+    shortLabel: '小红书',
+    shortLabelEn: 'RED / XHS',
+    defaultSubtitleStyle: 'xiaohongshu-card',
+    defaultBgm: 'fresh-112',
+    defaultBpm: 112,
+    specSummary: '9:16 竖屏 · 质感种草氛围感 · 奶油卡片高亮字幕',
+    specSummaryEn: '9:16 Vertical · Aesthetic Lifestyle Notes · Cream Card Captions',
+    estimatedCampaignValueUsd: 160,
   },
   tiktok: {
     id: 'tiktok',
+    group: 'global',
     label: 'TikTok',
+    labelEn: 'TikTok',
     shortLabel: 'TikTok',
+    shortLabelEn: 'TikTok',
     defaultSubtitleStyle: 'tiktok-pill',
     defaultBgm: 'tech-118',
     defaultBpm: 118,
-    specSummary: '9:16 Vertical · Fast Beat Cuts · Native White Pill Captions',
+    specSummary: '9:16 竖屏 · 快节奏卡点 · 原生白底胶囊字幕',
+    specSummaryEn: '9:16 Vertical · Fast Beat Cuts · Native White Pill Captions',
+    estimatedCampaignValueUsd: 240,
+  },
+  instagram: {
+    id: 'instagram',
+    group: 'global',
+    label: 'Instagram Reels',
+    labelEn: 'Instagram Reels',
+    shortLabel: 'Instagram',
+    shortLabelEn: 'Instagram',
+    defaultSubtitleStyle: 'instagram-bold',
+    defaultBgm: 'fresh-112',
+    defaultBpm: 114,
+    specSummary: '9:16 竖屏 · 审美构图与节奏留存 · IG 粗体杂志字幕',
+    specSummaryEn: '9:16 Vertical · Aesthetic Story Flow · Bold Editorial Captions',
+    estimatedCampaignValueUsd: 265,
   },
   facebook: {
     id: 'facebook',
+    group: 'global',
     label: 'Facebook Reels',
+    labelEn: 'Facebook Reels',
     shortLabel: 'Facebook',
+    shortLabelEn: 'Facebook',
     defaultSubtitleStyle: 'facebook-cinema',
     defaultBgm: 'lofi-95',
     defaultBpm: 95,
-    specSummary: '9:16 / 4:5 Feed · Story Retention Arc · Editorial Lower Captions',
+    specSummary: '4:5 信息流 · 叙事完播曲线 · 影院级半透明底字幕',
+    specSummaryEn: '4:5 Feed · Story Retention Arc · Editorial Lower Captions',
+    estimatedCampaignValueUsd: 195,
   },
 };
+
+export function getPlatformLabel(pid: PlatformId, uiLang: UiLanguage, short = false): string {
+  const meta = PLATFORM_META[pid];
+  if (!meta) return pid;
+  if (uiLang === 'zh-CN') return short ? meta.shortLabel : meta.label;
+  return short ? meta.shortLabelEn : meta.labelEn;
+}
 
 export function createInitialPlatformProjects(): Record<PlatformId, PlatformProjectState> {
   return {
@@ -218,6 +416,113 @@ export function createInitialPlatformProjects(): Record<PlatformId, PlatformProj
         volume: 0.65,
         voiceoverEnabled: false,
         voiceoverVoice: 'Kore',
+        voiceoverPresetId: 'zh-kore',
+        voiceoverVolume: 0.95,
+        bgmAutoDucking: true,
+        naturalMode: 'expressive',
+      },
+      sfxEvents: [],
+      voiceoverCues: [],
+    },
+    xiaohongshu: {
+      platform: 'xiaohongshu',
+      aspectRatio: '9:16',
+      clips: [
+        {
+          id: 'xhs-c1',
+          assetId: 'asset-desk',
+          label: '氛围开场 · 晨光窗边桌面',
+          trimStart: 0,
+          duration: 2.4,
+          transition: 'cut',
+          motion: 'ken-burns-in',
+          filter: 'warm-film',
+          speed: 1,
+          hookTag: '封面质感定调',
+        },
+        {
+          id: 'xhs-c2',
+          assetId: 'asset-beans',
+          label: '细节特写 · 现磨烘豆质感',
+          trimStart: 0,
+          duration: 2.4,
+          transition: 'crossfade',
+          motion: 'pan-right',
+          filter: 'natural',
+          speed: 1,
+        },
+        {
+          id: 'xhs-c3',
+          assetId: 'asset-pourover',
+          label: '治愈瞬间 · 92°C 蒸汽注水',
+          trimStart: 0,
+          duration: 2.6,
+          transition: 'blur-dissolve',
+          motion: 'ken-burns-out',
+          filter: 'warm-film',
+          speed: 1,
+        },
+        {
+          id: 'xhs-c4',
+          assetId: 'asset-swirl',
+          label: '高光特写 · 燕麦拿铁云朵融合',
+          trimStart: 0,
+          duration: 2.6,
+          transition: 'crossfade',
+          motion: 'ken-burns-in',
+          filter: 'vibrant',
+          speed: 1,
+        },
+      ],
+      subtitles: [
+        {
+          id: 'xhs-s1',
+          startTime: 0.1,
+          duration: 2.2,
+          text: '把咖啡馆搬进清晨 7 点的书桌',
+          style: 'xiaohongshu-card',
+          position: 'bottom',
+        },
+        {
+          id: 'xhs-s2',
+          startTime: 2.4,
+          duration: 2.3,
+          text: '中浅烘豆子研磨出柑橘花香',
+          style: 'xiaohongshu-card',
+          position: 'bottom',
+        },
+        {
+          id: 'xhs-s3',
+          startTime: 4.8,
+          duration: 2.5,
+          text: '注水闷蒸的那 30 秒最治愈',
+          style: 'xiaohongshu-card',
+          position: 'bottom',
+        },
+        {
+          id: 'xhs-s4',
+          startTime: 7.4,
+          duration: 2.4,
+          text: '配方放评论区啦，姐妹们快码住',
+          style: 'xiaohongshu-card',
+          position: 'bottom',
+        },
+      ],
+      copy: {
+        platform: 'xiaohongshu',
+        title: '独居晨间仪式感｜3 分钟复刻好喝到尖叫的居家冰燕麦拿铁',
+        caption: '早起不用赶着去买咖啡啦！15g 豆子 + 225ml 水温 92°C，倒入冰燕麦奶的一瞬间真的太治愈了。你们早八都喝什么提神？',
+        hashtags: ['居家咖啡角', '晨间仪式感', '小红书vlog', '手冲咖啡分享', '治愈系日常'],
+        hookOpening: '把咖啡馆搬进清晨 7 点的书桌',
+        ctaText: '喜欢这篇记得点赞收藏防走丢',
+      },
+      audio: {
+        bgmPreset: 'fresh-112',
+        bpm: 112,
+        volume: 0.62,
+        voiceoverEnabled: false,
+        voiceoverVoice: 'Zephyr',
+        voiceoverPresetId: 'zh-zephyr',
         voiceoverVolume: 0.95,
         bgmAutoDucking: true,
         naturalMode: 'expressive',
@@ -322,7 +627,114 @@ export function createInitialPlatformProjects(): Record<PlatformId, PlatformProj
         bpm: 118,
         volume: 0.65,
         voiceoverEnabled: false,
-        voiceoverVoice: 'Zephyr',
+        voiceoverVoice: 'Puck',
+        voiceoverPresetId: 'en-puck',
+        voiceoverVolume: 0.95,
+        bgmAutoDucking: true,
+        naturalMode: 'expressive',
+      },
+      sfxEvents: [],
+      voiceoverCues: [],
+    },
+    instagram: {
+      platform: 'instagram',
+      aspectRatio: '9:16',
+      clips: [
+        {
+          id: 'ig-c1',
+          assetId: 'asset-pourover',
+          label: 'Reels Opener · Warm Pour Steam',
+          trimStart: 0,
+          duration: 2.4,
+          transition: 'cut',
+          motion: 'ken-burns-in',
+          filter: 'warm-film',
+          speed: 1,
+          hookTag: 'Aesthetic Hook',
+        },
+        {
+          id: 'ig-c2',
+          assetId: 'asset-beans',
+          label: 'Macro Cut · Roasted Beans',
+          trimStart: 0,
+          duration: 2.2,
+          transition: 'crossfade',
+          motion: 'pan-left',
+          filter: 'cinematic',
+          speed: 1,
+        },
+        {
+          id: 'ig-c3',
+          assetId: 'asset-swirl',
+          label: 'Hero Reveal · Iced Oat Swirl',
+          trimStart: 0,
+          duration: 2.6,
+          transition: 'zoom-punch',
+          motion: 'ken-burns-out',
+          filter: 'vibrant',
+          speed: 1,
+        },
+        {
+          id: 'ig-c4',
+          assetId: 'asset-desk',
+          label: 'Final Frame · Creator Desk',
+          trimStart: 0,
+          duration: 2.6,
+          transition: 'crossfade',
+          motion: 'ken-burns-in',
+          filter: 'natural',
+          speed: 1,
+        },
+      ],
+      subtitles: [
+        {
+          id: 'ig-s1',
+          startTime: 0.1,
+          duration: 2.2,
+          text: 'MY 3-MINUTE STUDIO COFFEE RITUAL',
+          style: 'instagram-bold',
+          position: 'bottom',
+        },
+        {
+          id: 'ig-s2',
+          startTime: 2.4,
+          duration: 2.1,
+          text: 'FRESH BEANS · STEADY BLOOMING',
+          style: 'instagram-bold',
+          position: 'bottom',
+        },
+        {
+          id: 'ig-s3',
+          startTime: 4.6,
+          duration: 2.5,
+          text: 'VELVET OAT MILK POUR OVER ICE',
+          style: 'instagram-bold',
+          position: 'bottom',
+        },
+        {
+          id: 'ig-s4',
+          startTime: 7.2,
+          duration: 2.4,
+          text: 'SEND THIS TO YOUR COFFEE BUDDY',
+          style: 'instagram-bold',
+          position: 'bottom',
+        },
+      ],
+      copy: {
+        platform: 'instagram',
+        title: 'Quiet Desk Mornings & Café-Grade Iced Oat Latte in 3 Minutes',
+        caption: 'Proof that you do not need an expensive café bar for a clean, velvety morning brew. Tap Save so you can recreate the exact pour ratio tomorrow.',
+        hashtags: ['reelsaesthetic', 'morningcoffee', 'homecafe', 'creatordesk', 'oatlatte'],
+        hookOpening: 'MY 3-MINUTE STUDIO COFFEE RITUAL',
+        ctaText: 'Save & share with your morning coffee partner',
+      },
+      audio: {
+        bgmPreset: 'fresh-112',
+        bpm: 114,
+        volume: 0.62,
+        voiceoverEnabled: false,
+        voiceoverVoice: 'Kore',
+        voiceoverPresetId: 'en-kore',
         voiceoverVolume: 0.95,
         bgmAutoDucking: true,
         naturalMode: 'expressive',
@@ -428,6 +840,7 @@ export function createInitialPlatformProjects(): Record<PlatformId, PlatformProj
         volume: 0.6,
         voiceoverEnabled: false,
         voiceoverVoice: 'Charon',
+        voiceoverPresetId: 'en-charon',
         voiceoverVolume: 0.95,
         bgmAutoDucking: true,
         naturalMode: 'expressive',
@@ -466,7 +879,7 @@ export function applyAiPlanToProjects(
 
   for (const pPlan of plan.platforms as AutoEditApiPlatformPlan[]) {
     const pid = pPlan.platform;
-    if (pid !== 'douyin' && pid !== 'tiktok' && pid !== 'facebook') continue;
+    if (!ALL_PLATFORM_IDS.includes(pid)) continue;
 
     const existing = next[pid];
     const subtitleStyle = PLATFORM_META[pid].defaultSubtitleStyle;
@@ -551,7 +964,8 @@ export function buildLocalBeatSyncTimeline(
   platform: PlatformId,
   assets: MediaAsset[],
   bpm: number,
-  existingSubtitles: SubtitleSegment[]
+  existingSubtitles: SubtitleSegment[],
+  contentLang: ContentLanguage = 'zh-CN'
 ): { clips: TimelineClip[]; subtitles: SubtitleSegment[] } {
   const safeAssets = assets.length > 0 ? assets : BUILTIN_MEDIA_ASSETS;
   const beatsPerCut = bpm >= 120 ? 4 : 3;
@@ -560,19 +974,19 @@ export function buildLocalBeatSyncTimeline(
 
   const motions: MotionType[] = ['ken-burns-in', 'pan-left', 'ken-burns-out', 'pan-right'];
   const transitions: TransitionType[] =
-    platform === 'facebook'
+    platform === 'facebook' || platform === 'xiaohongshu'
       ? ['crossfade', 'crossfade', 'zoom-punch', 'crossfade']
       : ['zoom-punch', 'whip-pan', 'flash', 'crossfade'];
   const filters: ColorFilter[] =
-    platform === 'douyin'
+    platform === 'douyin' || platform === 'xiaohongshu'
       ? ['vibrant', 'warm-film', 'cinematic', 'vibrant']
-      : platform === 'tiktok'
+      : platform === 'tiktok' || platform === 'instagram'
         ? ['cinematic', 'vibrant', 'cool-clean', 'natural']
         : ['natural', 'warm-film', 'cinematic', 'natural'];
 
   const clips: TimelineClip[] = [];
 
-  // Build up to 6 beat-synced highlight cuts across available assets
+  // Build up to 6-8 beat-synced highlight cuts across available assets
   const targetCuts = Math.max(4, Math.min(8, safeAssets.length * 2));
   for (let i = 0; i < targetCuts; i++) {
     const asset = safeAssets[i % safeAssets.length];
@@ -583,17 +997,21 @@ export function buildLocalBeatSyncTimeline(
       trimStart = Number(((pass * cutDuration * 1.3 + i * 0.6) % maxStart).toFixed(2));
     }
 
+    const baseName = asset.name.replace(/\.[^.]+$/, '');
     clips.push({
       id: `${platform}-beat-${Date.now()}-${i}`,
       assetId: asset.id,
-      label: `卡点片段 ${i + 1} · ${asset.name.replace(/\.[^.]+$/, '')}`,
+      label:
+        contentLang === 'en'
+          ? `Beat Cut ${i + 1} · ${baseName}`
+          : `卡点片段 ${i + 1} · ${baseName}`,
       trimStart,
       duration: cutDuration,
       transition: i === 0 ? 'cut' : transitions[i % transitions.length],
       motion: motions[i % motions.length],
       filter: filters[i % filters.length],
       speed: 1,
-      hookTag: i === 0 ? 'Beat 01 Hook' : undefined,
+      hookTag: i === 0 ? (contentLang === 'en' ? 'Beat 01 Hook' : '前3秒卡点钩子') : undefined,
     });
   }
 

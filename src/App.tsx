@@ -51,12 +51,101 @@ import {
   renderTimelineFrame,
   type LoadedMediaElement,
 } from './utils/canvasRenderer';
-import { primeVoiceEnvelopeCache } from './utils/digitalHumanAssets';
+import {
+  BUILTIN_DIGITAL_HUMAN_PRESETS,
+  fileToPersistentAvatarDataUrl,
+  primeVoiceEnvelopeCache,
+} from './utils/digitalHumanAssets';
+
+const DH_PROFILES_STORAGE_KEY = 'clipflow_digital_humans_v1';
+const DH_UPLOADED_ASSETS_STORAGE_KEY = 'clipflow_dh_uploaded_assets_v1';
 
 export default function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>('editor');
   const [activePlatform, setActivePlatform] = useState<PlatformId>('douyin');
-  const [assets, setAssets] = useState<MediaAsset[]>(BUILTIN_MEDIA_ASSETS);
+  const [digitalHumans, setDigitalHumans] = useState<DigitalHumanProfile[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(DH_PROFILES_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return (parsed as DigitalHumanProfile[]).map((profile) => {
+        const hasValidUrl =
+          typeof profile.avatarUrl === 'string' &&
+          profile.avatarUrl.length > 0 &&
+          !profile.avatarUrl.startsWith('blob:');
+        return {
+          ...profile,
+          avatarUrl: hasValidUrl
+            ? profile.avatarUrl
+            : BUILTIN_DIGITAL_HUMAN_PRESETS[0].avatarUrl,
+          avatarMediaType: hasValidUrl ? profile.avatarMediaType : 'image',
+        };
+      });
+    } catch {
+      return [];
+    }
+  });
+  const [assets, setAssets] = useState<MediaAsset[]>(() => {
+    const persistedAssets: MediaAsset[] = [];
+    const seenIds = new Set<string>(BUILTIN_MEDIA_ASSETS.map((a) => a.id));
+    const seenUrls = new Set<string>(BUILTIN_MEDIA_ASSETS.map((a) => a.url));
+    try {
+      const raw = window.localStorage.getItem(DH_UPLOADED_ASSETS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed as MediaAsset[]) {
+            if (
+              item &&
+              typeof item.id === 'string' &&
+              typeof item.url === 'string' &&
+              !item.url.startsWith('blob:') &&
+              !seenIds.has(item.id)
+            ) {
+              seenIds.add(item.id);
+              seenUrls.add(item.url);
+              persistedAssets.push(item);
+            }
+          }
+        }
+      }
+      const rawProfiles = window.localStorage.getItem(DH_PROFILES_STORAGE_KEY);
+      if (rawProfiles) {
+        const parsedProfiles = JSON.parse(rawProfiles);
+        if (Array.isArray(parsedProfiles)) {
+          for (const prof of parsedProfiles as DigitalHumanProfile[]) {
+            if (
+              prof &&
+              typeof prof.avatarUrl === 'string' &&
+              prof.avatarUrl.startsWith('data:') &&
+              !prof.avatarUrl.startsWith('data:image/svg+xml') &&
+              !seenUrls.has(prof.avatarUrl)
+            ) {
+              const assetId = prof.avatarAssetId || `dh-upload-${prof.id}`;
+              if (!seenIds.has(assetId)) {
+                seenIds.add(assetId);
+                seenUrls.add(prof.avatarUrl);
+                persistedAssets.push({
+                  id: assetId,
+                  name: `${prof.name}-形象`,
+                  type: prof.avatarMediaType === 'video' ? 'video' : 'image',
+                  url: prof.avatarUrl,
+                  duration: 5,
+                  width: 540,
+                  height: 720,
+                  source: 'upload',
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return [...persistedAssets, ...BUILTIN_MEDIA_ASSETS];
+  });
   const [projects, setProjects] = useState<Record<PlatformId, PlatformProjectState>>(() =>
     createInitialPlatformProjects()
   );
@@ -96,17 +185,6 @@ export default function App() {
     }
   });
 
-  const [digitalHumans, setDigitalHumans] = useState<DigitalHumanProfile[]>(() => {
-    try {
-      const raw = window.localStorage.getItem('clipflow_digital_humans_v1');
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as DigitalHumanProfile[]) : [];
-    } catch {
-      return [];
-    }
-  });
-
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -119,15 +197,46 @@ export default function App() {
   }, [clonedVoices]);
 
   useEffect(() => {
+    const trimmed = digitalHumans.slice(0, 6);
     try {
-      window.localStorage.setItem(
-        'clipflow_digital_humans_v1',
-        JSON.stringify(digitalHumans.slice(0, 6))
-      );
+      window.localStorage.setItem(DH_PROFILES_STORAGE_KEY, JSON.stringify(trimmed));
+    } catch {
+      // If audio payload exceeds localStorage quota, keep compact profiles + persistent avatarUrl intact
+      try {
+        const compact = trimmed.map((p, idx) =>
+          idx === 0
+            ? {
+                ...p,
+                sampleAudioBase64:
+                  p.sampleAudioBase64 && p.sampleAudioBase64.length < 350_000
+                    ? p.sampleAudioBase64
+                    : undefined,
+              }
+            : { ...p, sampleAudioBase64: undefined, sampleAudioMimeType: undefined }
+        );
+        window.localStorage.setItem(DH_PROFILES_STORAGE_KEY, JSON.stringify(compact));
+      } catch {
+        // ignore storage quota errors
+      }
+    }
+  }, [digitalHumans]);
+
+  useEffect(() => {
+    try {
+      const dhUploaded = assets
+        .filter(
+          (a) =>
+            a.source === 'upload' &&
+            (a.id.startsWith('dh-upload-') || a.id.startsWith('dh-asset-')) &&
+            a.url.startsWith('data:') &&
+            a.url.length < 2_800_000
+        )
+        .slice(0, 6);
+      window.localStorage.setItem(DH_UPLOADED_ASSETS_STORAGE_KEY, JSON.stringify(dhUploaded));
     } catch {
       // ignore storage quota errors
     }
-  }, [digitalHumans]);
+  }, [assets]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaCacheRef = useRef<Map<string, LoadedMediaElement>>(new Map());
@@ -1094,56 +1203,41 @@ export default function App() {
     setDigitalHumans((prev) => prev.filter((p) => p.id !== profileId));
   };
 
-  const handleUploadMediaAssetForAnchor = (file: File): Promise<MediaAsset | null> => {
-    return new Promise((resolve) => {
-      const url = URL.createObjectURL(file);
-      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-      const isVideo = file.type.startsWith('video/');
+  const handleUploadMediaAssetForAnchor = async (file: File): Promise<MediaAsset | null> => {
+    const converted = await fileToPersistentAvatarDataUrl(file);
+    if (!converted) return null;
 
-      if (isVideo) {
-        const probe = document.createElement('video');
-        probe.preload = 'auto';
-        probe.muted = true;
-        probe.onloadeddata = () => {
-          const asset: MediaAsset = {
-            id: `dh-upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            name: file.name,
-            type: 'video',
-            url,
-            duration: Math.max(1.5, probe.duration || 5),
-            width: probe.videoWidth || 1080,
-            height: probe.videoHeight || 1920,
-            source: 'upload',
-            fileSizeLabel: `${sizeMb}MB`,
-          };
-          setAssets((prev) => [asset, ...prev]);
-          void autoTagUploadedAsset(asset, probe);
-          resolve(asset);
-        };
-        probe.onerror = () => resolve(null);
-        probe.src = url;
-      } else {
-        const img = new Image();
-        img.onload = () => {
-          const asset: MediaAsset = {
-            id: `dh-upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            name: file.name,
-            type: 'image',
-            url,
-            duration: 5,
-            width: img.naturalWidth || 1080,
-            height: img.naturalHeight || 1920,
-            source: 'upload',
-            fileSizeLabel: `${sizeMb}MB`,
-          };
-          setAssets((prev) => [asset, ...prev]);
-          void autoTagUploadedAsset(asset, img);
-          resolve(asset);
-        };
-        img.onerror = () => resolve(null);
-        img.src = url;
-      }
-    });
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    const asset: MediaAsset = {
+      id: `dh-upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: file.name,
+      type: converted.mediaType,
+      url: converted.url,
+      duration: converted.duration,
+      width: converted.width,
+      height: converted.height,
+      source: 'upload',
+      fileSizeLabel: `${sizeMb}MB`,
+    };
+    setAssets((prev) => [asset, ...prev]);
+
+    if (converted.mediaType === 'video') {
+      const probe = document.createElement('video');
+      probe.preload = 'auto';
+      probe.muted = true;
+      probe.onloadeddata = () => {
+        void autoTagUploadedAsset(asset, probe);
+      };
+      probe.src = converted.url;
+    } else {
+      const img = new Image();
+      img.onload = () => {
+        void autoTagUploadedAsset(asset, img);
+      };
+      img.src = converted.url;
+    }
+
+    return asset;
   };
 
   const handleEmbedDigitalHumanPip = (

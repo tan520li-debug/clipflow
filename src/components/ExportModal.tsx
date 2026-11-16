@@ -142,6 +142,12 @@ function formatFileSize(bytes: number): string {
   return `${mb.toFixed(mb >= 100 ? 0 : 1)} MB`;
 }
 
+function isNativeH264Mp4Mime(mimeType?: string): boolean {
+  if (!mimeType) return false;
+  const low = mimeType.toLowerCase();
+  return low.includes('mp4') && (low.includes('avc1') || low.includes('h264'));
+}
+
 export function ExportModal({
   project,
   assetsMap,
@@ -166,14 +172,19 @@ export function ExportModal({
 
   const [previewTime, setPreviewTime] = useState<number>(0.2);
   const [showSafeZone, setShowSafeZone] = useState<boolean>(true);
+  const [burnAiWatermark, setBurnAiWatermark] = useState<boolean>(true);
+  const [transcodeToH264Mp4, setTranscodeToH264Mp4] = useState<boolean>(true);
   const [generatingPreview, setGeneratingPreview] = useState<boolean>(false);
   const [previewSnapshots, setPreviewSnapshots] = useState<
     Array<{ label: string; time: number; dataUrl: string }>
   >([]);
 
   const [rendering, setRendering] = useState(false);
+  const [transcodingMp4, setTranscodingMp4] = useState(false);
+  const [transcodeNote, setTranscodeNote] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [outputExt, setOutputExt] = useState<'mp4' | 'webm'>('mp4');
   const [actualBlobSize, setActualBlobSize] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedCopy, setCopiedCopy] = useState(false);
@@ -291,6 +302,7 @@ export function ExportModal({
         applyTransitionBlurToCanvas: true,
         voiceoverCues: project.voiceoverCues,
         voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
+        showAiWatermark: burnAiWatermark,
       });
     },
     [
@@ -302,6 +314,7 @@ export function ExportModal({
       mediaCache,
       outWidth,
       outHeight,
+      burnAiWatermark,
     ]
   );
 
@@ -350,6 +363,7 @@ export function ExportModal({
               applyTransitionBlurToCanvas: true,
               voiceoverCues: project.voiceoverCues,
               voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
+              showAiWatermark: burnAiWatermark,
             });
             snapshots.push({
               label: pt.label,
@@ -378,6 +392,7 @@ export function ExportModal({
     }
 
     setError(null);
+    setTranscodeNote(null);
     setProgress(0);
     setActualBlobSize(null);
     if (downloadUrl) {
@@ -448,14 +463,68 @@ export function ExportModal({
         if (e.data && e.data.size > 0) chunks.push(e.data);
       };
       recorder.onstop = () => {
-        const outType = codecInfo.mimeType?.includes('mp4') ? 'video/mp4' : 'video/webm';
-        const blob = new Blob(chunks, { type: outType });
-        const url = URL.createObjectURL(blob);
-        setActualBlobSize(blob.size);
-        setDownloadUrl(url);
-        setRendering(false);
-        setProgress(100);
-        audioEngine.stop();
+        void (async () => {
+          audioEngine.stop();
+          const isNativeMp4 = isNativeH264Mp4Mime(codecInfo.mimeType);
+          const outType = codecInfo.mimeType?.includes('mp4') ? 'video/mp4' : 'video/webm';
+          const recordedBlob = new Blob(chunks, { type: outType });
+
+          if (transcodeToH264Mp4 && !isNativeMp4 && recordedBlob.size > 0) {
+            setTranscodingMp4(true);
+            setTranscodeNote('浏览器录制格式非 H.264 MP4，正在服务端通过 FFmpeg 转码...');
+            try {
+              const headers: Record<string, string> = {
+                'Content-Type': outType || 'video/webm',
+              };
+              const adminToken =
+                typeof window !== 'undefined'
+                  ? window.localStorage.getItem('clipflow_admin_token')?.trim()
+                  : '';
+              if (adminToken) {
+                headers['x-clipflow-token'] = adminToken;
+              }
+              const resp = await fetch(
+                `/api/export/transcode-mp4?sourceExt=${outType.includes('mp4') ? 'mp4' : 'webm'}`,
+                {
+                  method: 'POST',
+                  headers,
+                  body: recordedBlob,
+                }
+              );
+              if (!resp.ok) {
+                const errJson = (await resp.json().catch(() => null)) as { error?: string } | null;
+                throw new Error(errJson?.error || `转码服务返回 ${resp.status}`);
+              }
+              const mp4Blob = await resp.blob();
+              if (mp4Blob.size > 0) {
+                const mp4Url = URL.createObjectURL(mp4Blob);
+                setActualBlobSize(mp4Blob.size);
+                setOutputExt('mp4');
+                setDownloadUrl(mp4Url);
+                setTranscodeNote('已通过服务端 FFmpeg 转码为高兼容 H.264 MP4');
+                setTranscodingMp4(false);
+                setRendering(false);
+                setProgress(100);
+                return;
+              }
+            } catch (err: unknown) {
+              const reason = err instanceof Error ? err.message : '服务端 FFmpeg 转码失败';
+              setTranscodeNote(
+                `${reason}（已为您保留原始 ${outType.includes('mp4') ? 'MP4' : 'WebM'} 成片供直接下载）`
+              );
+            } finally {
+              setTranscodingMp4(false);
+            }
+          }
+
+          const fallbackExt: 'mp4' | 'webm' = outType.includes('mp4') ? 'mp4' : 'webm';
+          const url = URL.createObjectURL(recordedBlob);
+          setActualBlobSize(recordedBlob.size);
+          setOutputExt(fallbackExt);
+          setDownloadUrl(url);
+          setRendering(false);
+          setProgress(100);
+        })();
       };
 
       recorderRef.current = recorder;
@@ -515,6 +584,7 @@ export function ExportModal({
           applyTransitionBlurToCanvas: true,
           voiceoverCues: project.voiceoverCues,
           voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
+          showAiWatermark: burnAiWatermark,
         });
 
         setProgress(Math.min(99, Math.round((clamped / totalDuration) * 100)));
@@ -559,7 +629,12 @@ export function ExportModal({
     }
   };
 
-  const downloadExt = codecInfo.mimeType?.includes('mp4') ? 'mp4' : 'webm';
+  const isNativeH264Mp4 = isNativeH264Mp4Mime(codecInfo.mimeType);
+  const downloadExt = downloadUrl
+    ? outputExt
+    : transcodeToH264Mp4 || isNativeH264Mp4
+      ? 'mp4'
+      : 'webm';
 
   return (
     <div
@@ -826,6 +901,65 @@ export function ExportModal({
                   <span>12.0 Mbps (母带级)</span>
                 </div>
               </div>
+
+              {/* AI Watermark & Server H.264 MP4 Transcode Options */}
+              <div className="pt-2.5 border-t border-zinc-800/80 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="rounded-md border border-zinc-800 bg-[#11141B] p-2.5 flex items-center justify-between gap-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-zinc-100">
+                      「AI 生成」标识水印
+                    </div>
+                    <p className="text-[10px] text-zinc-400 mt-0.5 leading-snug">
+                      默认开启，直接烧录至成片右上角
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={burnAiWatermark}
+                    aria-label="AI 生成标识开关"
+                    onClick={() => setBurnAiWatermark((v) => !v)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                      burnAiWatermark ? 'bg-rose-600' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        burnAiWatermark ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="rounded-md border border-zinc-800 bg-[#11141B] p-2.5 flex items-center justify-between gap-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-zinc-100">
+                      自动转码 H.264 MP4
+                    </div>
+                    <p className="text-[10px] text-zinc-400 mt-0.5 leading-snug">
+                      {isNativeH264Mp4
+                        ? '浏览器已原生支持 H.264 MP4'
+                        : '非 H.264 MP4 时服务端 FFmpeg 转码'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={transcodeToH264Mp4}
+                    aria-label="自动转码 H.264 MP4"
+                    onClick={() => setTranscodeToH264Mp4((v) => !v)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                      transcodeToH264Mp4 ? 'bg-emerald-600' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        transcodeToH264Mp4 ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Live Pre-Preview Estimate Bar + CTA */}
@@ -1010,8 +1144,25 @@ export function ExportModal({
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-400">编码与容器</span>
-                      <span className="text-zinc-200 font-mono-nums">{codecInfo.codecDisplayLabel}</span>
+                      <span className="text-zinc-400">编码与封装</span>
+                      <span className="text-zinc-200 font-mono-nums">
+                        {codecInfo.codecDisplayLabel}
+                        {!isNativeH264Mp4 && transcodeToH264Mp4 ? ' → H.264 MP4' : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-400">AI 生成角标</span>
+                      <button
+                        type="button"
+                        onClick={() => setBurnAiWatermark((v) => !v)}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                          burnAiWatermark
+                            ? 'border-rose-500/50 bg-rose-500/15 text-rose-200'
+                            : 'border-zinc-700 bg-zinc-900 text-zinc-400'
+                        }`}
+                      >
+                        {burnAiWatermark ? '已开启 · 烧录右上角' : '已关闭'}
+                      </button>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-400">目标码率</span>
@@ -1050,6 +1201,12 @@ export function ExportModal({
                     />
                   </div>
 
+                  {transcodeNote && (
+                    <div className="rounded-md border border-zinc-800 bg-[#11141B] px-2.5 py-1.5 text-[11px] text-zinc-300 leading-snug">
+                      {transcodeNote}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2 pt-1">
                     {!rendering && (
                       <button
@@ -1072,7 +1229,11 @@ export function ExportModal({
                         {rendering ? (
                           <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>正在实时合成视频帧 ({progress}%)...</span>
+                            <span>
+                              {transcodingMp4
+                                ? '正在服务端 FFmpeg 转码 H.264 MP4...'
+                                : `正在实时合成视频帧 (${progress}%)...`}
+                            </span>
                           </>
                         ) : (
                           <>

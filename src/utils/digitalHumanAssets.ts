@@ -14,6 +14,7 @@ import type {
   DigitalHumanVisemeClass,
   SubtitleSegment,
   TimelineClip,
+  UiLanguage,
   VoiceoverCue,
   VoiceoverVoice,
 } from '../types/studio';
@@ -594,6 +595,43 @@ export function getDigitalHumanActionTemplate(
   );
 }
 
+const ACTION_EN_META: Record<DigitalHumanActionId, { label: string; summary: string }> = {
+  explain: {
+    label: 'Explain',
+    summary: 'Balanced two-beat presenter gestures for tutorials, insights, and product walkthroughs.',
+  },
+  point: {
+    label: 'Point',
+    summary: 'Side-leaning directional cue guiding viewer attention to key footage details.',
+  },
+  wave: {
+    label: 'Wave',
+    summary: 'Raised hand wave with welcoming tilt, ideal for 3s hooks and friendly outros.',
+  },
+  amaze: {
+    label: 'Amaze',
+    summary: 'Energetic zoom micro-shake with radial accent lines to amplify reveals and hooks.',
+  },
+  nod: {
+    label: 'Nod',
+    summary: 'Natural affirmative head nods and endorsement halo for reviews and summaries.',
+  },
+  'thumbs-up': {
+    label: 'Thumbs Up',
+    summary: 'Forward thumbs-up gesture with star accents to boost follows and CTAs.',
+  },
+};
+
+export function getLocalizedActionTemplate(
+  actionId: DigitalHumanActionId | undefined,
+  lang: UiLanguage = 'zh-CN'
+): DigitalHumanActionTemplate {
+  const base = getDigitalHumanActionTemplate(actionId);
+  if (lang === 'zh-CN') return base;
+  const en = ACTION_EN_META[base.id];
+  return en ? { ...base, label: en.label, summary: en.summary } : base;
+}
+
 export interface DigitalHumanEmotionPreset {
   id: DigitalHumanEmotionId;
   label: string;
@@ -690,6 +728,39 @@ export function getDigitalHumanEmotionPreset(
   );
 }
 
+const EMOTION_EN_META: Record<DigitalHumanEmotionId, { label: string; description: string }> = {
+  excited: {
+    label: 'Excited',
+    description: 'Wide jaw opening, raised brows, bright smile, and lively head rhythm for viral hooks.',
+  },
+  serious: {
+    label: 'Serious',
+    description: 'Focused brows, composed lips, and steady posture for tech reviews and analysis.',
+  },
+  suspense: {
+    label: 'Suspense',
+    description: 'Sharp brow tension, focused eyes, and deliberate articulation for plot twists.',
+  },
+  warm: {
+    label: 'Warm',
+    description: 'Gentle smile curve and relaxed expression suited for vlogs and lifestyle sharing.',
+  },
+  neutral: {
+    label: 'Neutral',
+    description: 'Balanced studio muscle baseline with crisp, natural lip articulation.',
+  },
+};
+
+export function getLocalizedEmotionPreset(
+  emotionId: DigitalHumanEmotionId | undefined,
+  lang: UiLanguage = 'zh-CN'
+): DigitalHumanEmotionPreset {
+  const base = getDigitalHumanEmotionPreset(emotionId);
+  if (lang === 'zh-CN') return base;
+  const en = EMOTION_EN_META[base.id];
+  return en ? { ...base, label: en.label, description: en.description } : base;
+}
+
 export function clampFacialMuscles(
   raw?: Partial<DigitalHumanFacialMuscles> | null
 ): DigitalHumanFacialMuscles {
@@ -714,7 +785,8 @@ export function clampFacialMuscles(
 export async function analyzeAudioProsodyForEmotion(
   audioBase64?: string,
   _mimeType?: string,
-  scriptText?: string
+  scriptText?: string,
+  uiLang: UiLanguage = 'zh-CN'
 ): Promise<DigitalHumanEmotionAnalysis> {
   let energyRms = 0.22;
   let pitchVariance = 0.28;
@@ -787,41 +859,56 @@ export async function analyzeAudioProsodyForEmotion(
 
   const text = (scriptText || '').trim();
   const hasSuspenseCue =
-    /[？?…]|竟然|真相|千万别|小心|秘密|为什么|吓人|细思极恐|背后/.test(text);
+    /[？?…]|竟然|真相|千万别|小心|秘密|为什么|吓人|细思极恐|背后|\b(secret|truth|why|warning|careful|twist)\b/i.test(text);
   const hasExcitedCue =
-    /[！!]|太绝|爆款|冲|必看|超值|哇|天呐|搞定|惊艳|福利/.test(text);
+    /[！!]|太绝|爆款|冲|必看|超值|哇|天呐|搞定|惊艳|福利|\b(amazing|insane|wow|must|unbelievable|game-changer)\b/i.test(text);
   const hasSeriousCue =
-    /评测|实测|数据|核心|警示|警告|对比|原理|避坑|报告|专业/.test(text);
+    /评测|实测|数据|核心|警示|警告|对比|原理|避坑|报告|专业|\b(review|data|benchmark|analysis|compare|warning)\b/i.test(text);
 
   let emotion: DigitalHumanEmotionId = 'neutral';
   let confidence = 0.78;
-  let toneSummary = '音频语调平稳均衡，已匹配自然演播室面部肌肉驱动。';
+  let toneSummary =
+    uiLang === 'en'
+      ? 'Balanced vocal cadence detected; applied natural studio facial muscle drive.'
+      : '音频语调平稳均衡，已匹配自然演播室面部肌肉驱动。';
 
   if (hasSuspenseCue || (pauseRatio >= 0.32 && pitchVariance >= 0.25 && energyRms < 0.36)) {
     emotion = 'suspense';
     confidence = 0.86;
-    toneSummary = `检测到语调停顿拉长（停顿比 ${Math.round(pauseRatio * 100)}%）与高低音落差，自动增强眉峰紧绷与锐利聚焦眼神参数。`;
+    toneSummary =
+      uiLang === 'en'
+        ? `Extended pause ratio (${Math.round(pauseRatio * 100)}%) and pitch contrast detected; boosted brow tension and focused gaze.`
+        : `检测到语调停顿拉长（停顿比 ${Math.round(pauseRatio * 100)}%）与高低音落差，自动增强眉峰紧绷与锐利聚焦眼神参数。`;
   } else if (
     (energyRms >= 0.28 && tempoBurstRate >= 2.6) ||
     (hasExcitedCue && energyRms >= 0.2)
   ) {
     emotion = 'excited';
     confidence = 0.89;
-    toneSummary = `检测到高声压能量与高频音节爆发（${tempoBurstRate.toFixed(1)} 次/秒），自动放大张口幅度、挑眉张力与嘴角上扬曲线。`;
+    toneSummary =
+      uiLang === 'en'
+        ? `High vocal energy and syllable bursts (${tempoBurstRate.toFixed(1)}/s) detected; amplified jaw opening, brow lift, and smile curve.`
+        : `检测到高声压能量与高频音节爆发（${tempoBurstRate.toFixed(1)} 次/秒），自动放大张口幅度、挑眉张力与嘴角上扬曲线。`;
   } else if (
     hasSeriousCue ||
     (pitchVariance < 0.26 && energyRms >= 0.16 && tempoBurstRate < 2.8)
   ) {
     emotion = 'serious';
     confidence = 0.84;
-    toneSummary = `检测到声线沉稳低波动（语调方差 ${pitchVariance.toFixed(2)}），自动收敛微笑弧度并加强眉弓沉稳与咬字锐度。`;
+    toneSummary =
+      uiLang === 'en'
+        ? `Steady low-variance voice (${pitchVariance.toFixed(2)}) detected; tightened brow posture and articulation sharpness.`
+        : `检测到声线沉稳低波动（语调方差 ${pitchVariance.toFixed(2)}），自动收敛微笑弧度并加强眉弓沉稳与咬字锐度。`;
   } else if (energyRms >= 0.14 && pauseRatio < 0.28) {
     emotion = 'warm';
     confidence = 0.81;
-    toneSummary = '语速柔和流畅、音量分布均匀，已匹配亲和微笑与松弛自然的面部肌肉参数。';
+    toneSummary =
+      uiLang === 'en'
+        ? 'Smooth, approachable pacing detected; matched warm smile and relaxed facial rig.'
+        : '语速柔和流畅、音量分布均匀，已匹配亲和微笑与松弛自然的面部肌肉参数。';
   }
 
-  const basePreset = getDigitalHumanEmotionPreset(emotion);
+  const basePreset = getLocalizedEmotionPreset(emotion, uiLang);
   const energyDelta = Math.max(-0.12, Math.min(0.18, (energyRms - 0.22) * 0.75));
   const muscles = clampFacialMuscles({
     ...basePreset.muscles,
@@ -851,6 +938,7 @@ function classifySingleContextAction(params: {
   hookTag?: string;
   clipIndex: number;
   totalClips: number;
+  uiLang?: UiLanguage;
 }): {
   action: DigitalHumanActionId;
   secondary: DigitalHumanActionId;
@@ -858,7 +946,7 @@ function classifySingleContextAction(params: {
   reason: string;
   confidence: number;
 } {
-  const { text, label = '', hookTag = '', clipIndex, totalClips } = params;
+  const { text, label = '', hookTag = '', clipIndex, totalClips, uiLang = 'zh-CN' } = params;
   const combined = `${hookTag} ${label} ${text}`.trim();
   const isFirst = clipIndex === 0;
   const isLast = totalClips > 1 && clipIndex === totalClips - 1;
@@ -873,36 +961,35 @@ function classifySingleContextAction(params: {
     'thumbs-up': 0.15,
   };
 
-  if (/高潮|爆点|反转|惊艳|太绝|绝了|天呐|震撼|没想到|居然|竟然|秘密|炸裂|省一半|翻倍|离谱|真相|揭秘|惊呆|[！!]{1,}/.test(combined)) {
-    scores.amaze += /高潮|爆点|反转|惊艳|震撼|天呐|秘密/.test(combined) ? 1.35 : 0.95;
+  if (/高潮|爆点|反转|惊艳|太绝|绝了|天呐|震撼|没想到|居然|竟然|秘密|炸裂|省一半|翻倍|离谱|真相|揭秘|惊呆|[！!]{1,}|\b(stop buying|amazing|shocking|secret|unbelievable|climax|wow|insane)\b/i.test(combined)) {
+    scores.amaze += /高潮|爆点|反转|惊艳|震撼|天呐|秘密|\b(amazing|shocking|secret|climax)\b/i.test(combined) ? 1.35 : 0.95;
   }
-  if (/看这里|你看|注意看|细节|实拍|展示|特写|对比|步骤|演示|注水|萃取|倒入|研磨|磨豆|拉花|画面|这里|左边|右边|界面|外观|构造|手冲|教你/.test(combined)) {
+  if (/看这里|你看|注意看|细节|实拍|展示|特写|对比|步骤|演示|注水|萃取|倒入|研磨|磨豆|拉花|画面|这里|左边|右边|界面|外观|构造|手冲|教你|\b(step|look|detail|macro|pour|grind|demo|here|swirl|bloom)\b/i.test(combined)) {
     scores.point += 1.25;
   }
-  if (/大家好|哈喽|嗨|欢迎|各位|早八|先说|开场|见面|认识一下|拜拜|下期见/.test(combined)) {
+  if (/大家好|哈喽|嗨|欢迎|各位|早八|先说|开场|见面|认识一下|拜拜|下期见|\b(hey|hello|hi everyone|welcome|morning|intro|opener)\b/i.test(combined)) {
     scores.wave += 1.15;
   }
-  if (/点赞|关注|收藏|评论|下单|购买|链接|福利|试试|推荐入手|快去|记得|冲|CTA|转化/.test(combined)) {
+  if (/点赞|关注|收藏|评论|下单|购买|链接|福利|试试|推荐入手|快去|记得|冲|CTA|转化|\b(save|share|follow|subscribe|comment|link|try this|like)\b/i.test(combined)) {
     scores['thumbs-up'] += 1.25;
   }
-  if (/实测|口碑|认同|靠谱|确实|没错|真的香|值得|稳了|亲测|满意|舒服|总结/.test(combined)) {
+  if (/实测|口碑|认同|靠谱|确实|没错|真的香|值得|稳了|亲测|满意|舒服|总结|\b(proof|tested|worth|honest|solid|summary|verdict)\b/i.test(combined)) {
     scores.nod += 1.05;
   }
-  if (/讲解|原理|为什么|科普|干货|教程|方法|逻辑|首先|其次|核心|重点|分析|拆解|指南|攻略/.test(combined)) {
+  if (/讲解|原理|为什么|科普|干货|教程|方法|逻辑|首先|其次|核心|重点|分析|拆解|指南|攻略|\b(how|why|tutorial|guide|workflow|method|explain|tip)\b/i.test(combined)) {
     scores.explain += 1.05;
   }
 
   // Narrative arc positional boosts
   if (isFirst) {
     scores.wave += 0.45;
-    if (/钩子|hook|3秒|开场/.test(combined.toLowerCase())) {
+    if (/钩子|hook|3秒|开场/i.test(combined)) {
       scores.amaze += 0.3;
     }
   } else if (isLast) {
     scores['thumbs-up'] += 0.45;
     scores.nod += 0.3;
   } else if (totalClips >= 3 && clipIndex === Math.floor(totalClips * 0.65)) {
-    // Typical climax beat before ending
     scores.amaze += 0.25;
   }
 
@@ -914,7 +1001,7 @@ function classifySingleContextAction(params: {
   const topScore = ranked[0][1];
   const confidence = Number(Math.min(0.95, Math.max(0.72, 0.65 + topScore * 0.14)).toFixed(2));
 
-  const stageReasonMap: Record<DigitalHumanActionId, { stage: string; reason: string }> = {
+  const stageReasonMapZh: Record<DigitalHumanActionId, { stage: string; reason: string }> = {
     point: {
       stage: '细节讲解',
       reason: '脚本包含画面细节、步骤展示或实拍指代词，推荐「指引」手势引导观众聚焦核心视觉卖点。',
@@ -941,11 +1028,40 @@ function classifySingleContextAction(params: {
     },
   };
 
+  const stageReasonMapEn: Record<DigitalHumanActionId, { stage: string; reason: string }> = {
+    point: {
+      stage: 'Visual Callout',
+      reason: 'Script references on-screen details or step-by-step demonstrations; "Point" directs viewer focus to the product.',
+    },
+    amaze: {
+      stage: 'Climax Reveal',
+      reason: 'Detected high-energy emphasis or hook reveal cues; "Amaze" amplifies the punchline.',
+    },
+    wave: {
+      stage: 'Opening Greeting',
+      reason: 'Fits the opening greeting or first-3-seconds rapport builder; "Wave" warms up audience retention.',
+    },
+    'thumbs-up': {
+      stage: 'CTA Outro',
+      reason: 'Contains call-to-action or save/share cues; "Thumbs Up" boosts engagement and conversions.',
+    },
+    nod: {
+      stage: 'Endorsement',
+      reason: 'Highlights tested results or takeaway verdict; "Nod" reinforces presenter credibility.',
+    },
+    explain: {
+      stage: 'Key Explanation',
+      reason: 'Focuses on structured explanation or tutorial flow; "Explain" maintains steady rhythm.',
+    },
+  };
+
+  const map = uiLang === 'en' ? stageReasonMapEn : stageReasonMapZh;
+
   return {
     action: topAction,
     secondary,
-    stage: stageReasonMap[topAction].stage,
-    reason: stageReasonMap[topAction].reason,
+    stage: map[topAction].stage,
+    reason: map[topAction].reason,
     confidence,
   };
 }
@@ -960,8 +1076,9 @@ export function analyzeScriptForActionSuggestions(params: {
   clips: TimelineClip[];
   subtitles: SubtitleSegment[];
   selectedClipId?: string | null;
+  uiLang?: UiLanguage;
 }): DigitalHumanActionRecommendation {
-  const { brief = '', scriptText = '', clips, subtitles, selectedClipId } = params;
+  const { brief = '', scriptText = '', clips, subtitles, selectedClipId, uiLang = 'zh-CN' } = params;
 
   let cursor = 0;
   const clipSuggestions: DigitalHumanClipActionSuggestion[] = clips.map((clip, idx) => {
@@ -993,9 +1110,10 @@ export function analyzeScriptForActionSuggestions(params: {
       hookTag: clip.hookTag,
       clipIndex: idx,
       totalClips: clips.length,
+      uiLang,
     });
 
-    const tmpl = getDigitalHumanActionTemplate(classified.action);
+    const tmpl = getLocalizedActionTemplate(classified.action, uiLang);
     return {
       clipId: clip.id,
       clipLabel: clip.label,
@@ -1006,7 +1124,6 @@ export function analyzeScriptForActionSuggestions(params: {
     };
   });
 
-  // Primary recommendation focuses on the selected clip + active spoken script, or overall brief
   const selectedSuggestion = selectedClipId
     ? clipSuggestions.find((s) => s.clipId === selectedClipId)
     : undefined;
@@ -1034,6 +1151,7 @@ export function analyzeScriptForActionSuggestions(params: {
       hookTag: selClip?.hookTag,
       clipIndex: selIdx,
       totalClips: clips.length,
+      uiLang,
     });
 
     return {
@@ -1060,6 +1178,7 @@ export function analyzeScriptForActionSuggestions(params: {
     hookTag: selClip?.hookTag,
     clipIndex: Math.max(0, selIdx),
     totalClips: Math.max(1, clips.length),
+    uiLang,
   });
 
   return {
@@ -1183,6 +1302,43 @@ export function getDigitalHumanCameraPreset(
     DIGITAL_HUMAN_CAMERA_PRESETS.find((p) => p.id === presetId) ??
     DIGITAL_HUMAN_CAMERA_PRESETS[0]
   );
+}
+
+const CAMERA_EN_META: Record<DigitalHumanCameraPresetId, { label: string; summary: string }> = {
+  none: {
+    label: 'Locked Tripod',
+    summary: 'Stable studio tripod framing preserving original anchor composition.',
+  },
+  'push-in': {
+    label: 'Slow Push-In',
+    summary: 'Gradually pushes in to intensify presenter eye contact and engagement.',
+  },
+  'pull-out': {
+    label: 'Smooth Pull-Out',
+    summary: 'Pulls back smoothly from close-up to half-body framing for summaries.',
+  },
+  'pan-sweep': {
+    label: 'Pan Sweep',
+    summary: 'Cinematic lateral camera pan adding realistic motion to static portraits.',
+  },
+  'handheld-shake': {
+    label: 'Handheld Shake',
+    summary: 'Subtle organic handheld vlog breathing motion to reduce static stiffness.',
+  },
+  'dolly-zoom': {
+    label: 'Dynamic Push',
+    summary: 'Punchy push-in combined with lateral pan and tremor for 3s hooks and reveals.',
+  },
+};
+
+export function getLocalizedCameraPreset(
+  presetId: DigitalHumanCameraPresetId | undefined,
+  lang: UiLanguage = 'zh-CN'
+): DigitalHumanCameraPreset {
+  const base = getDigitalHumanCameraPreset(presetId);
+  if (lang === 'zh-CN') return base;
+  const en = CAMERA_EN_META[base.id];
+  return en ? { ...base, label: en.label, summary: en.summary } : base;
 }
 
 export function clampCameraMotion(
@@ -1354,6 +1510,30 @@ export function getDigitalHumanLanguageOption(
   );
 }
 
+const TARGET_LANG_EN_LABELS: Record<DigitalHumanTargetLanguage, string> = {
+  'en-US': 'English',
+  'ja-JP': 'Japanese',
+  'ko-KR': 'Korean',
+  'es-ES': 'Spanish',
+  'fr-FR': 'French',
+  'de-DE': 'German',
+  'pt-BR': 'Portuguese',
+  'ar-SA': 'Arabic',
+  'zh-CN': 'Chinese',
+};
+
+export function getLocalizedTargetLanguageOption(
+  lang: DigitalHumanTargetLanguage | undefined,
+  uiLang: UiLanguage = 'zh-CN'
+): DigitalHumanLanguageOption {
+  const base = getDigitalHumanLanguageOption(lang);
+  if (uiLang === 'zh-CN') return base;
+  return {
+    ...base,
+    label: TARGET_LANG_EN_LABELS[base.id] ?? base.nativeName,
+  };
+}
+
 export interface VisemeDisplayMeta {
   id: DigitalHumanVisemeClass;
   shortTag: string;
@@ -1441,6 +1621,26 @@ export const VISEME_META_MAP: Record<DigitalHumanVisemeClass, VisemeDisplayMeta>
 
 export function getVisemeDisplayMeta(viseme?: DigitalHumanVisemeClass): VisemeDisplayMeta {
   return VISEME_META_MAP[viseme ?? 'sil'] ?? VISEME_META_MAP.sil;
+}
+
+const VISEME_EN_LABELS: Record<DigitalHumanVisemeClass, string> = {
+  sil: 'Closed Pause',
+  aa: 'Open Vowel /a/',
+  eh: 'Mid Open /e/',
+  iy: 'Spread Vowel /i/',
+  oh: 'Rounded Mid /o/',
+  oo: 'Puckered /u/',
+  fv: 'Labiodental /f,v/',
+  sz: 'Sibilant /s,z/',
+};
+
+export function getLocalizedVisemeMeta(
+  viseme: DigitalHumanVisemeClass | undefined,
+  uiLang: UiLanguage = 'zh-CN'
+): VisemeDisplayMeta {
+  const base = getVisemeDisplayMeta(viseme);
+  if (uiLang === 'zh-CN') return base;
+  return { ...base, label: VISEME_EN_LABELS[base.id] ?? base.label };
 }
 
 function hzToMel(hz: number): number {
@@ -2024,5 +2224,278 @@ export function samplePhonemeAlignmentAtTime(
     appliedOffsetMs: Math.round(lerp(f0.keyframeOffsetMs, f1.keyframeOffsetMs)),
   };
 }
+
+/**
+ * Splits long voiceover/digital-human scripts cleanly along sentence and clause boundaries
+ * so long speeches can be synthesized without truncation and concatenated smoothly.
+ */
+export function splitSpeechScriptIntoSegments(
+  rawText: string,
+  maxCharsPerSegment = 160
+): string[] {
+  const normalized = (rawText || '').replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const safeLimit = Math.max(40, Math.min(260, Math.round(maxCharsPerSegment)));
+
+  // Split by sentence terminators keeping punctuation attached
+  const sentenceUnits = normalized
+    .split(/(?<=[。！？!?；;\n])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const expandOverlongUnit = (unit: string): string[] => {
+    if (unit.length <= safeLimit) return [unit];
+
+    // Secondary split on comma/clause delimiters
+    const clauses = unit
+      .split(/(?<=[，,、：:])/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    const out: string[] = [];
+    let buf = '';
+    for (const clause of clauses) {
+      if (clause.length > safeLimit) {
+        if (buf) {
+          out.push(buf);
+          buf = '';
+        }
+        // Hard wrap extremely long punctuation-free strings respecting whitespace for Latin text
+        let cursor = 0;
+        while (cursor < clause.length) {
+          let end = Math.min(clause.length, cursor + safeLimit);
+          if (end < clause.length) {
+            const lastSpace = clause.lastIndexOf(' ', end);
+            if (lastSpace > cursor + Math.floor(safeLimit * 0.5)) {
+              end = lastSpace + 1;
+            }
+          }
+          const slice = clause.slice(cursor, end).trim();
+          if (slice) out.push(slice);
+          cursor = end;
+        }
+      } else if (!buf) {
+        buf = clause;
+      } else if (buf.length + clause.length <= safeLimit) {
+        buf = `${buf}${clause}`;
+      } else {
+        out.push(buf);
+        buf = clause;
+      }
+    }
+    if (buf) out.push(buf);
+    return out;
+  };
+
+  const expandedUnits = sentenceUnits.flatMap(expandOverlongUnit);
+  const segments: string[] = [];
+  let current = '';
+
+  for (const unit of expandedUnits) {
+    if (!current) {
+      current = unit;
+    } else if (current.length + 1 + unit.length <= safeLimit) {
+      const needsSpace = /[a-zA-Z0-9]$/.test(current) && /^[a-zA-Z0-9]/.test(unit);
+      current = `${current}${needsSpace ? ' ' : ''}${unit}`;
+    } else {
+      segments.push(current);
+      current = unit;
+    }
+  }
+  if (current) segments.push(current);
+
+  return segments;
+}
+
+/**
+ * Estimates spoken TTS duration in seconds from Chinese characters, Latin/digit words,
+ * and punctuation pauses before audio synthesis is invoked.
+ */
+export function estimateSpeechDurationSec(rawText: string, speakingRate = 1.0): number {
+  const clean = (rawText || '').trim();
+  if (!clean) return 0;
+
+  const cjkCount = (clean.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
+  const nonCjkText = clean.replace(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, ' ');
+  const latinWords = (nonCjkText.match(/[a-zA-Z0-9]+(?:['’-][a-zA-Z0-9]+)*/g) || []).length;
+  const majorPauses = (clean.match(/[。！？!?；;\n]/g) || []).length;
+  const minorPauses = (clean.match(/[，,、：:]/g) || []).length;
+
+  const rate = speakingRate > 0 ? speakingRate : 1.0;
+  const speechTime = cjkCount / 3.9 + latinWords / 2.45;
+  const pauseTime = Math.max(0, majorPauses - 0.5) * 0.32 + minorPauses * 0.16;
+  const segments = splitSpeechScriptIntoSegments(clean, 160);
+  const stitchPause = Math.max(0, segments.length - 1) * 0.12;
+
+  return Number(Math.max(1.2, (speechTime + pauseTime + stitchPause) / rate).toFixed(1));
+}
+
+export interface PersistentAvatarDataResult {
+  url: string;
+  mediaType: 'image' | 'video';
+  width: number;
+  height: number;
+  duration: number;
+  convertedFromLargeVideo?: boolean;
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
+        resolve(reader.result);
+      } else {
+        reject(new Error('文件读取失败'));
+      }
+    };
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImageDataUrl(
+  rawDataUrl: string,
+  maxDim = 640,
+  quality = 0.82
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const natW = img.naturalWidth || 540;
+      const natH = img.naturalHeight || 720;
+      const scale = Math.min(1, maxDim / Math.max(natW, natH));
+      const outW = Math.max(64, Math.round(natW * scale));
+      const outH = Math.max(64, Math.round(natH * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve({ dataUrl: rawDataUrl, width: natW, height: natH });
+        return;
+      }
+      ctx.drawImage(img, 0, 0, outW, outH);
+      resolve({
+        dataUrl: canvas.toDataURL('image/jpeg', quality),
+        width: outW,
+        height: outH,
+      });
+    };
+    img.onerror = () => reject(new Error('图片解码失败'));
+    img.src = rawDataUrl;
+  });
+}
+
+/**
+ * Converts user-uploaded avatar photos or videos into persistent compressed data URLs
+ * (never volatile blob: URLs) so digital human anchors survive page reloads.
+ */
+export async function fileToPersistentAvatarDataUrl(
+  file: File
+): Promise<PersistentAvatarDataResult | null> {
+  try {
+    const isVideo = file.type.startsWith('video/');
+    if (!isVideo) {
+      const rawDataUrl = await readFileAsDataUrl(file);
+      const compressed = await compressImageDataUrl(rawDataUrl, 640, 0.82);
+      return {
+        url: compressed.dataUrl,
+        mediaType: 'image',
+        width: compressed.width,
+        height: compressed.height,
+        duration: 5,
+      };
+    }
+
+    const rawVideoDataUrl = await readFileAsDataUrl(file);
+    return await new Promise<PersistentAvatarDataResult | null>((resolve) => {
+      const vid = document.createElement('video');
+      vid.preload = 'auto';
+      vid.muted = true;
+      vid.playsInline = true;
+
+      const cleanup = () => {
+        vid.onloadeddata = null;
+        vid.onseeked = null;
+        vid.onerror = null;
+        vid.removeAttribute('src');
+      };
+
+      const maxPersistVideoBytes = 2 * 1024 * 1024; // Keep small videos intact as data:video URL
+
+      vid.onloadeddata = () => {
+        const natW = vid.videoWidth || 540;
+        const natH = vid.videoHeight || 960;
+        const dur = Math.max(1.5, Number(vid.duration) || 5);
+        if (file.size <= maxPersistVideoBytes) {
+          cleanup();
+          resolve({
+            url: rawVideoDataUrl,
+            mediaType: 'video',
+            width: natW,
+            height: natH,
+            duration: dur,
+          });
+          return;
+        }
+        // Large video: capture high-clarity persistent portrait JPEG frame so localStorage stays healthy
+        try {
+          vid.currentTime = Math.min(0.35, dur * 0.15);
+        } catch {
+          const scale = Math.min(1, 640 / Math.max(natW, natH));
+          const c = document.createElement('canvas');
+          c.width = Math.max(64, Math.round(natW * scale));
+          c.height = Math.max(64, Math.round(natH * scale));
+          const ctx = c.getContext('2d');
+          ctx?.drawImage(vid, 0, 0, c.width, c.height);
+          const poster = c.toDataURL('image/jpeg', 0.82);
+          cleanup();
+          resolve({
+            url: poster,
+            mediaType: 'image',
+            width: c.width,
+            height: c.height,
+            duration: dur,
+            convertedFromLargeVideo: true,
+          });
+        }
+      };
+
+      vid.onseeked = () => {
+        const natW = vid.videoWidth || 540;
+        const natH = vid.videoHeight || 960;
+        const dur = Math.max(1.5, Number(vid.duration) || 5);
+        const scale = Math.min(1, 640 / Math.max(natW, natH));
+        const c = document.createElement('canvas');
+        c.width = Math.max(64, Math.round(natW * scale));
+        c.height = Math.max(64, Math.round(natH * scale));
+        const ctx = c.getContext('2d');
+        ctx?.drawImage(vid, 0, 0, c.width, c.height);
+        const poster = c.toDataURL('image/jpeg', 0.82);
+        cleanup();
+        resolve({
+          url: poster,
+          mediaType: 'image',
+          width: c.width,
+          height: c.height,
+          duration: dur,
+          convertedFromLargeVideo: true,
+        });
+      };
+
+      vid.onerror = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      vid.src = rawVideoDataUrl;
+    });
+  } catch {
+    return null;
+  }
+}
+
 
 

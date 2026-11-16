@@ -1,4 +1,10 @@
-export type PlatformId = 'douyin' | 'tiktok' | 'facebook';
+export type UiLanguage = 'zh-CN' | 'en';
+
+export type ContentLanguage = 'zh-CN' | 'en';
+
+export type PlatformGroup = 'domestic' | 'global';
+
+export type PlatformId = 'douyin' | 'xiaohongshu' | 'tiktok' | 'instagram' | 'facebook';
 
 export type AspectRatio = '9:16' | '4:5';
 
@@ -45,7 +51,13 @@ export type MotionType = 'ken-burns-in' | 'ken-burns-out' | 'pan-left' | 'pan-ri
 
 export type ColorFilter = 'natural' | 'cinematic' | 'vibrant' | 'warm-film' | 'cool-clean';
 
-export type SubtitleStyle = 'douyin-yellow' | 'tiktok-pill' | 'facebook-cinema' | 'minimal-clean';
+export type SubtitleStyle =
+  | 'douyin-yellow'
+  | 'xiaohongshu-card'
+  | 'tiktok-pill'
+  | 'instagram-bold'
+  | 'facebook-cinema'
+  | 'minimal-clean';
 
 export type EditingStyle = 'beat-sync' | 'talking-head' | 'cinematic-story' | 'product-showcase';
 
@@ -365,6 +377,17 @@ export interface PlatformCopy {
 
 export type VoiceoverVoice = 'Kore' | 'Zephyr' | 'Puck' | 'Charon' | 'Fenrir';
 
+export interface VoicePresetOption {
+  id: string;
+  language: ContentLanguage;
+  baseVoice: VoiceoverVoice;
+  labelZh: string;
+  labelEn: string;
+  styleTagZh: string;
+  styleTagEn: string;
+  personaHint: string;
+}
+
 export interface ClonedVoiceProfile {
   id: string;
   name: string;
@@ -427,6 +450,7 @@ export interface AudioConfig {
   customAudioName?: string;
   voiceoverEnabled: boolean;
   voiceoverVoice?: VoiceoverVoice;
+  voiceoverPresetId?: string;
   voiceoverVolume?: number; // 0 to 1
   bgmAutoDucking?: boolean;
   naturalMode?: 'expressive' | 'standard';
@@ -475,12 +499,42 @@ export interface PlatformProjectState {
   voiceoverCues?: VoiceoverCue[];
 }
 
+export interface DigitalHumanDriveFrameKeyframe {
+  frameIndex: number;
+  timeSec: number;
+  jawOpen: number;
+  mouthWidth: number;
+  pucker: number;
+  viseme: DigitalHumanVisemeClass;
+  headTiltRad: number;
+  poseId: DigitalHumanActionId;
+  emotionId: DigitalHumanEmotionId;
+}
+
+export interface DigitalHumanDriveResponse {
+  audioBase64: string;
+  mimeType: string;
+  voiceName: VoiceoverVoice;
+  audioDurationSec: number;
+  estimatedDurationSec: number;
+  segmentCount: number;
+  modelUsed?: string;
+  phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
+  driveFrameSequence: DigitalHumanDriveFrameKeyframe[];
+  driveFrameCount: number;
+  cacheHit: boolean;
+  previewCachePath: string;
+  cachedAt: string;
+}
+
 export interface AutoEditApiRequest {
   brief: string;
   style: EditingStyle;
   targetPlatforms: PlatformId[];
   bpm: number;
   durationTarget: number;
+  contentLanguage?: ContentLanguage;
+  uiLanguage?: UiLanguage;
   mediaSummary: Array<{
     index: number;
     name: string;

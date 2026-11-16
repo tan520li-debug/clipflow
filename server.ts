@@ -1,11 +1,18 @@
 import 'dotenv/config';
+import { spawn } from 'child_process';
 import crypto from 'crypto';
 import express from 'express';
+import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
-import { extractMelPhonemeAlignmentFromPcm } from './src/utils/digitalHumanAssets.ts';
+import {
+  estimateSpeechDurationSec,
+  extractMelPhonemeAlignmentFromPcm,
+  splitSpeechScriptIntoSegments,
+} from './src/utils/digitalHumanAssets.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1396,6 +1403,244 @@ function extractWavMelPhonemeAlignment(
   }
 }
 
+function parseWavPcmMonoInt16(
+  base64: string
+): { sampleRate: number; samples: Int16Array } | null {
+  try {
+    const clean = base64.includes(',') ? base64.split(',')[1] : base64;
+    const buf = Buffer.from(clean, 'base64');
+    if (buf.length < 44) return null;
+    if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+      return null;
+    }
+
+    let sampleRate = 24000;
+    let numChannels = 1;
+    let bitsPerSample = 16;
+    let dataOffset = 44;
+    let dataSize = buf.length - 44;
+
+    let offset = 12;
+    while (offset + 8 <= buf.length) {
+      const chunkId = buf.toString('ascii', offset, offset + 4);
+      const chunkSize = buf.readUInt32LE(offset + 4);
+      if (chunkId === 'fmt ') {
+        numChannels = buf.readUInt16LE(offset + 10) || 1;
+        sampleRate = buf.readUInt32LE(offset + 12) || 24000;
+        bitsPerSample = buf.readUInt16LE(offset + 22) || 16;
+      } else if (chunkId === 'data') {
+        dataOffset = offset + 8;
+        dataSize = Math.min(chunkSize, buf.length - dataOffset);
+        break;
+      }
+      offset += 8 + chunkSize + (chunkSize % 2);
+    }
+
+    if (bitsPerSample !== 16) return null;
+    const frameBytes = 2 * numChannels;
+    const totalFrames = Math.floor(dataSize / frameBytes);
+    if (totalFrames <= 0) return null;
+
+    const samples = new Int16Array(totalFrames);
+    for (let i = 0; i < totalFrames; i++) {
+      let sum = 0;
+      const frameBase = dataOffset + i * frameBytes;
+      for (let ch = 0; ch < numChannels; ch++) {
+        sum += buf.readInt16LE(frameBase + ch * 2);
+      }
+      samples[i] = Math.max(-32768, Math.min(32767, Math.round(sum / numChannels)));
+    }
+    return { sampleRate, samples };
+  } catch {
+    return null;
+  }
+}
+
+function resampleInt16Mono(
+  samples: Int16Array,
+  fromRate: number,
+  toRate: number
+): Int16Array {
+  if (fromRate === toRate || samples.length === 0) return samples;
+  const outLen = Math.max(1, Math.round((samples.length * toRate) / fromRate));
+  const out = new Int16Array(outLen);
+  const ratio = fromRate / toRate;
+  for (let i = 0; i < outLen; i++) {
+    const srcPos = i * ratio;
+    const idx0 = Math.min(samples.length - 1, Math.floor(srcPos));
+    const idx1 = Math.min(samples.length - 1, idx0 + 1);
+    const frac = srcPos - idx0;
+    const val = samples[idx0] * (1 - frac) + samples[idx1] * frac;
+    out[i] = Math.max(-32768, Math.min(32767, Math.round(val)));
+  }
+  return out;
+}
+
+function buildMonoWavBase64(samples: Int16Array, sampleRate: number): string {
+  const dataSize = samples.length * 2;
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0, 4, 'ascii');
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8, 4, 'ascii');
+  header.write('fmt ', 12, 4, 'ascii');
+  header.writeUInt32LE(16, 16); // PCM fmt chunk size
+  header.writeUInt16LE(1, 20); // PCM audio format
+  header.writeUInt16LE(1, 22); // Mono
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28); // ByteRate
+  header.writeUInt16LE(2, 32); // BlockAlign
+  header.writeUInt16LE(16, 34); // BitsPerSample
+  header.write('data', 36, 4, 'ascii');
+  header.writeUInt32LE(dataSize, 40);
+
+  const pcmBuf = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
+  return Buffer.concat([header, pcmBuf]).toString('base64');
+}
+
+function concatenateWavBase64Segments(
+  segments: Array<{ data: string; mimeType: string }>,
+  pauseMs = 120
+): { audioBase64: string; mimeType: string; durationSec: number | null } {
+  if (segments.length === 0) {
+    throw new Error('No audio segments provided');
+  }
+  if (segments.length === 1) {
+    return {
+      audioBase64: segments[0].data,
+      mimeType: segments[0].mimeType || 'audio/wav',
+      durationSec: getWavDurationSec(segments[0].data),
+    };
+  }
+
+  const parsedList = segments.map((s) => parseWavPcmMonoInt16(s.data));
+  if (parsedList.some((p) => p === null)) {
+    // Fallback to first segment if non-WAV returned
+    return {
+      audioBase64: segments[0].data,
+      mimeType: segments[0].mimeType || 'audio/wav',
+      durationSec: getWavDurationSec(segments[0].data),
+    };
+  }
+
+  const valid = parsedList as Array<{ sampleRate: number; samples: Int16Array }>;
+  const targetRate = valid[0].sampleRate || 24000;
+  const pauseSamplesCount = Math.max(0, Math.round((targetRate * pauseMs) / 1000));
+
+  const normalizedChunks = valid.map((v) =>
+    v.sampleRate === targetRate
+      ? v.samples
+      : resampleInt16Mono(v.samples, v.sampleRate, targetRate)
+  );
+
+  const totalSampleCount =
+    normalizedChunks.reduce((acc, c) => acc + c.length, 0) +
+    Math.max(0, normalizedChunks.length - 1) * pauseSamplesCount;
+
+  const stitched = new Int16Array(totalSampleCount);
+  let cursor = 0;
+  for (let i = 0; i < normalizedChunks.length; i++) {
+    stitched.set(normalizedChunks[i], cursor);
+    cursor += normalizedChunks[i].length;
+    if (i < normalizedChunks.length - 1) {
+      cursor += pauseSamplesCount; // zero-filled pause gap
+    }
+  }
+
+  const stitchedBase64 = buildMonoWavBase64(stitched, targetRate);
+  const durationSec = Number(Math.max(0.4, totalSampleCount / targetRate).toFixed(2));
+  return {
+    audioBase64: stitchedBase64,
+    mimeType: 'audio/wav',
+    durationSec,
+  };
+}
+
+async function transcodeVideoBufferToH264Mp4(
+  inputBuffer: Buffer,
+  sourceExt = 'webm'
+): Promise<Buffer> {
+  const safeExt = /^[a-z0-9]{2,5}$/i.test(sourceExt) ? sourceExt.toLowerCase() : 'webm';
+  const jobId = crypto.randomUUID();
+  const inPath = path.join(os.tmpdir(), `clipflow-in-${jobId}.${safeExt}`);
+  const outPath = path.join(os.tmpdir(), `clipflow-out-${jobId}.mp4`);
+
+  await fs.writeFile(inPath, inputBuffer);
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const args = [
+        '-y',
+        '-i',
+        inPath,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0?',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '21',
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        '+faststart',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '160k',
+        '-ac',
+        '2',
+        outPath,
+      ];
+
+      const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderrTail = '';
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          proc.kill('SIGKILL');
+          reject(new Error('ffmpeg transcode timed out'));
+        }
+      }, 90_000);
+
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString('utf8')).slice(-2000);
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      });
+
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail}`));
+        }
+      });
+    });
+
+    const outBuffer = await fs.readFile(outPath);
+    if (!outBuffer || outBuffer.length === 0) {
+      throw new Error('Transcoded MP4 file is empty');
+    }
+    return outBuffer;
+  } finally {
+    await Promise.allSettled([fs.unlink(inPath), fs.unlink(outPath)]);
+  }
+}
+
 async function synthesizeStyledSpeech(
   ai: GoogleGenAI,
   opts: {
@@ -2601,6 +2846,17 @@ app.post('/api/digital-human/drive', async (req, res) => {
       return res.status(400).json({ error: '请输入数字人口播台词内容。' });
     }
 
+    const cleanScript = scriptText.trim();
+    const segments = splitSpeechScriptIntoSegments(cleanScript, 160);
+    if (segments.length === 0) {
+      return res.status(400).json({ error: '请输入有效的数字人口播台词内容。' });
+    }
+    if (segments.length > 12) {
+      return res.status(400).json({
+        error: `单次台词过长（当前约拆分为 ${segments.length} 段），请精简至 12 段（约 1900 字）以内再合成。`,
+      });
+    }
+
     const validVoices = new Set(['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir']);
     const safeVoice = validVoices.has(String(baseVoice)) ? String(baseVoice) : 'Kore';
     const expVal = Math.max(0.2, Math.min(1, Number(expressiveness) || 0.78));
@@ -2616,16 +2872,31 @@ app.post('/api/digital-human/drive', async (req, res) => {
     }. ${expDirective}`;
 
     const ai = getGeminiClient();
-    const inline = await synthesizeStyledSpeech(ai, {
-      voiceName: safeVoice,
-      spokenText: `<breath> ${scriptText.trim().slice(0, 260)}`,
-      stylePrompt,
-    });
+    const synthesizedSegments: Array<{ data: string; mimeType: string }> = [];
 
-    const durationSec = getWavDurationSec(inline.data);
+    for (let i = 0; i < segments.length; i++) {
+      const segText = segments[i];
+      const spokenText = i === 0 ? `<breath> ${segText}` : segText;
+      const inline = await synthesizeStyledSpeech(ai, {
+        preferLite: segments.length > 2,
+        voiceName: safeVoice,
+        spokenText,
+        stylePrompt,
+      });
+      if (!inline?.data) {
+        throw new Error(`Segment ${i + 1} returned empty audio`);
+      }
+      synthesizedSegments.push({
+        data: inline.data,
+        mimeType: inline.mimeType || 'audio/wav',
+      });
+    }
+
+    const stitched = concatenateWavBase64Segments(synthesizedSegments, 120);
+    const estimatedDurationSec = estimateSpeechDurationSec(cleanScript);
     const phonemeAlignment =
       phonemeAlignmentEnabled !== false
-        ? extractWavMelPhonemeAlignment(inline.data, {
+        ? extractWavMelPhonemeAlignment(stitched.audioBase64, {
             enabled: true,
             keyframeOffsetMs: Number(phonemeKeyframeOffsetMs ?? -12),
             onsetAdvanceMs: Number(phonemeOnsetAdvanceMs ?? 20),
@@ -2633,9 +2904,11 @@ app.post('/api/digital-human/drive', async (req, res) => {
         : undefined;
 
     return res.json({
-      audioBase64: inline.data,
-      mimeType: inline.mimeType || 'audio/wav',
-      audioDurationSec: durationSec ?? Number(Math.max(2, scriptText.trim().length * 0.24).toFixed(2)),
+      audioBase64: stitched.audioBase64,
+      mimeType: stitched.mimeType || 'audio/wav',
+      audioDurationSec: stitched.durationSec ?? estimatedDurationSec,
+      estimatedDurationSec,
+      segmentCount: segments.length,
       phonemeAlignment,
     });
   } catch (err: unknown) {
@@ -3273,6 +3546,32 @@ ${cleanAudio ? '- 已附带原主播真实人声参考音频，请仔细听辨�
     return res.status(500).json({ error: '多语言语音合成失败，请稍后重试。' });
   }
 });
+
+app.post(
+  '/api/export/transcode-mp4',
+  express.raw({ type: ['video/*', 'application/octet-stream'], limit: '160mb' }),
+  async (req, res) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: '未收到待转码的视频数据流。' });
+      }
+
+      const rawSourceExt =
+        typeof req.query.sourceExt === 'string' ? req.query.sourceExt.trim() : 'webm';
+      const mp4Buffer = await transcodeVideoBufferToH264Mp4(req.body, rawSourceExt);
+
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Disposition', 'attachment; filename="clipflow_export.mp4"');
+      res.setHeader('X-Video-Codec', 'h264');
+      return res.status(200).send(mp4Buffer);
+    } catch (err: unknown) {
+      console.error('[api/export/transcode-mp4] error:', err);
+      return res.status(500).json({
+        error: '服务端 FFmpeg 转码 H.264 MP4 失败，请稍后重试或直接下载原始格式。',
+      });
+    }
+  }
+);
 
 // Unknown /api/* JSON 404 handler (protected by auth & rate-limiter above)
 app.use('/api', (_req, res) => {

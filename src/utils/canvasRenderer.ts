@@ -405,6 +405,8 @@ export interface RenderFrameParams {
   voiceoverCues?: VoiceoverCue[];
   voiceoverEnabled?: boolean;
   voiceActivityOverride?: number;
+  showAiWatermark?: boolean;
+  aiWatermarkText?: string;
 }
 
 export function findClipAtTime(clips: TimelineClip[], timeSec: number) {
@@ -452,6 +454,8 @@ export function renderTimelineFrame({
   voiceoverCues,
   voiceoverEnabled = true,
   voiceActivityOverride,
+  showAiWatermark = false,
+  aiWatermarkText = 'AI 生成',
 }: RenderFrameParams): { activeClipId: string | null } {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#090B0E';
@@ -748,7 +752,48 @@ export function renderTimelineFrame({
     drawSubtitle(ctx, activeSub, width, height, timeSec - activeSub.startTime);
   }
 
+  // Optional "AI 生成" corner watermark burned cleanly into video frames
+  if (showAiWatermark) {
+    drawAiGeneratedWatermark(ctx, width, height, aiWatermarkText);
+  }
+
   return { activeClipId: clip.id };
+}
+
+function drawAiGeneratedWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  label = 'AI 生成'
+) {
+  const cleanLabel = (label || 'AI 生成').trim() || 'AI 生成';
+  ctx.save();
+  const fontSize = Math.max(11, Math.round(width * 0.025));
+  ctx.font = `600 ${fontSize}px "Plus Jakarta Sans", "Noto Sans SC", sans-serif`;
+  const textW = ctx.measureText(cleanLabel).width;
+  const padX = Math.max(8, Math.round(fontSize * 0.65));
+  const boxH = Math.round(fontSize * 1.68);
+  const boxW = Math.round(textW + padX * 2);
+  const marginX = Math.max(12, Math.round(width * 0.036));
+  const marginY = Math.max(12, Math.round(height * 0.032));
+  const x = width - boxW - marginX;
+  const y = marginY;
+  const radius = Math.max(5, Math.round(boxH * 0.28));
+
+  ctx.fillStyle = 'rgba(10, 12, 18, 0.56)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
+  ctx.lineWidth = Math.max(1, width * 0.0014);
+  drawRoundedRect(ctx, x, y, boxW, boxH, radius);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 4;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(cleanLabel, x + boxW / 2, y + boxH / 2 + 0.5);
+  ctx.restore();
 }
 
 interface ActionPoseKinematics {

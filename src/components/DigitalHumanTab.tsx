@@ -54,12 +54,14 @@ import {
   DIGITAL_HUMAN_CAMERA_PRESETS,
   DIGITAL_HUMAN_EMOTION_PRESETS,
   DIGITAL_HUMAN_LANGUAGES,
+  estimateSpeechDurationSec,
   getDigitalHumanActionTemplate,
   getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
   getDigitalHumanLanguageOption,
   getVisemeDisplayMeta,
   realignPhonemeProfileOffset,
+  splitSpeechScriptIntoSegments,
 } from '../utils/digitalHumanAssets';
 import { renderDigitalHumanMiniStage } from '../utils/canvasRenderer';
 
@@ -301,8 +303,19 @@ export function DigitalHumanTab({
     mimeType: string;
     durationSec: number;
     text: string;
+    segmentCount?: number;
   } | null>(null);
   const [isPreviewingMiniStage, setIsPreviewingMiniStage] = useState(false);
+
+  const speechEstimate = useMemo(() => {
+    const clean = scriptText.trim();
+    const segments = splitSpeechScriptIntoSegments(clean, 160);
+    return {
+      charCount: clean.length,
+      segmentCount: segments.length,
+      durationSec: estimateSpeechDurationSec(clean),
+    };
+  }, [scriptText]);
 
   // Multilingual Voice Synthesis & Voice Cloning State
   const [multilingualEnabled, setMultilingualEnabled] = useState<boolean>(
@@ -832,13 +845,25 @@ export function DigitalHumanTab({
       // Fallback cleanly to local profile creation using uploaded asset + recorded audio
     }
 
+    const persistentAvatarUrl =
+      uploadedPreviewUrl.startsWith('blob:') && imageBase64
+        ? `data:${imageMimeType};base64,${imageBase64}`
+        : uploadedPreviewUrl.startsWith('blob:')
+          ? BUILTIN_DIGITAL_HUMAN_PRESETS[0].avatarUrl
+          : uploadedPreviewUrl;
+    const persistentAvatarType: 'image' | 'video' =
+      persistentAvatarUrl.startsWith('data:video/') ||
+      (uploadedMediaType === 'video' && !uploadedPreviewUrl.startsWith('blob:'))
+        ? uploadedMediaType
+        : 'image';
+
     const newProfile: DigitalHumanProfile = {
       id: `dh-${Date.now()}`,
       name: anchorName.trim() || '我的虚拟主播',
       createdAt: new Date().toISOString(),
       avatarAssetId: selectedAssetForClone?.id,
-      avatarUrl: uploadedPreviewUrl,
-      avatarMediaType: uploadedMediaType,
+      avatarUrl: persistentAvatarUrl,
+      avatarMediaType: persistentAvatarType,
       personaSummary: aiPersonaSummary,
       anchorStyleTags: aiTags,
       baseVoice: aiBaseVoice,
@@ -959,13 +984,15 @@ export function DigitalHumanTab({
         throw new Error(data?.error || '数字人语音驱动失败，请重试。');
       }
 
-      const dur = Number(data.audioDurationSec || 3.2);
+      const dur = Number(data.audioDurationSec || speechEstimate.durationSec || 3.2);
       const mime = data.mimeType || 'audio/wav';
+      const segCount = Number(data.segmentCount || speechEstimate.segmentCount || 1);
       setDrivenAudio({
         audioBase64: data.audioBase64,
         mimeType: mime,
         durationSec: dur,
         text: scriptText.trim(),
+        segmentCount: segCount,
       });
       setFullClipDuration(Number(Math.max(2, dur + 0.2).toFixed(1)));
       if (data.phonemeAlignment) {
@@ -1595,6 +1622,22 @@ export function DigitalHumanTab({
 
   return (
     <div className="space-y-4">
+      {/* Engine Capability Notice */}
+      <div className="rounded-lg border border-sky-500/35 bg-sky-950/20 px-3 py-2.5 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-sky-200 flex items-center gap-1.5">
+            <Film className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span>当前引擎：照片/视频形象 + 画布口型动作</span>
+          </span>
+          <span className="px-1.5 py-0.5 rounded bg-sky-500/15 border border-sky-400/30 text-[9px] text-sky-200 shrink-0">
+            实时画布驱动
+          </span>
+        </div>
+        <p className="text-[10px] text-zinc-300/90 leading-relaxed">
+          通过画布实时叠加嘴部音素开合、表情肌肉与姿态手势实现口播同步，并非 Veo 生成的写实口播视频；上传的形象会自动压缩转为持久数据，刷新页面仍会保留。
+        </p>
+      </div>
+
       {/* 1. Digital Human Clone Creator */}
       <div className="rounded-lg border border-violet-500/35 bg-[#0B0D10] p-3 space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -1891,35 +1934,57 @@ export function DigitalHumanTab({
 
         {/* Live Mini Stage + Active Anchor Persona Card */}
         {activeAnchor && (
-          <div className="rounded-lg border border-zinc-800 bg-[#11141B] p-2.5 flex items-center gap-2.5">
-            <canvas
-              ref={miniCanvasRef}
-              width={96}
-              height={120}
-              className="w-16 h-20 rounded-md border border-zinc-700/80 shrink-0 bg-black"
-            />
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-semibold text-zinc-100 truncate">
-                  {activeAnchor.name}
-                </span>
-                <span className="text-[9px] font-mono-nums text-cyan-300 shrink-0">
-                  {activeAnchor.baseVoice}
-                </span>
-              </div>
-              <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
-                {activeAnchor.personaSummary}
-              </p>
-              <div className="flex flex-wrap gap-1 pt-0.5">
-                {activeAnchor.anchorStyleTags.slice(0, 3).map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-1.5 py-0.5 rounded bg-zinc-800 text-[9px] text-zinc-300"
-                  >
-                    {tag}
+          <div className="rounded-lg border border-zinc-800 bg-[#11141B] p-2.5 space-y-2">
+            <div className="flex items-center gap-2.5">
+              <canvas
+                ref={miniCanvasRef}
+                width={96}
+                height={120}
+                className="w-16 h-20 rounded-md border border-zinc-700/80 shrink-0 bg-black"
+              />
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-semibold text-zinc-100 truncate">
+                    {activeAnchor.name}
                   </span>
-                ))}
+                  <span className="text-[9px] font-mono-nums text-cyan-300 shrink-0">
+                    {activeAnchor.baseVoice}
+                  </span>
+                </div>
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  {activeAnchor.personaSummary}
+                </p>
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {activeAnchor.anchorStyleTags.slice(0, 3).map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-1.5 py-0.5 rounded bg-zinc-800 text-[9px] text-zinc-300"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
+            </div>
+
+            {/* Disabled Veo Photorealistic Talking Video Action */}
+            <div className="pt-1.5 border-t border-zinc-800/80 flex items-center justify-between gap-2">
+              <span className="text-[10px] text-zinc-500 leading-tight">
+                Veo 写实口播视频模型适配中
+              </span>
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                title="Veo 写实口播视频生成即将接入，当前请使用下方画布口型与动作驱动"
+                className="px-2.5 py-1 rounded-md border border-zinc-700/80 bg-zinc-900/80 text-[11px] font-medium text-zinc-400 cursor-not-allowed opacity-75 flex items-center gap-1.5 shrink-0"
+              >
+                <Film className="w-3 h-3 text-zinc-500" />
+                <span>生成说话视频</span>
+                <span className="px-1 py-0.2 rounded bg-zinc-800 border border-zinc-700 text-[9px] text-amber-300/90">
+                  即将接入
+                </span>
+              </button>
             </div>
           </div>
         )}
@@ -2882,9 +2947,25 @@ export function DigitalHumanTab({
               rows={3}
               value={scriptText}
               onChange={(e) => setScriptText(e.target.value)}
-              placeholder="输入想让虚拟主播说的话..."
-              className="w-full rounded-md bg-[#11141B] border border-zinc-800 px-2.5 py-2 text-xs text-zinc-100 focus:outline-none focus:border-cyan-500 resize-none"
+              placeholder="输入想让虚拟主播说的话（支持长台词，自动分段合成并拼接）..."
+              className="w-full rounded-md bg-[#11141B] border border-zinc-800 px-2.5 py-2 text-xs text-zinc-100 focus:outline-none focus:border-cyan-500 resize-y"
             />
+            <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-400 font-mono-nums px-0.5">
+              <span>
+                {speechEstimate.charCount > 0
+                  ? `约 ${speechEstimate.charCount} 字 · ${
+                      speechEstimate.segmentCount > 1
+                        ? `自动分 ${speechEstimate.segmentCount} 段合成并拼接`
+                        : '单段合成'
+                    }`
+                  : '支持长台词自动分段拼接'}
+              </span>
+              <span className="text-cyan-300 font-semibold">
+                {speechEstimate.charCount > 0
+                  ? `预估时长 ≈ ${speechEstimate.durationSec.toFixed(1)}s`
+                  : '预估时长 0.0s'}
+              </span>
+            </div>
             <button
               type="button"
               disabled={drivingSpeech || !scriptText.trim()}
@@ -2894,12 +2975,21 @@ export function DigitalHumanTab({
               {drivingSpeech ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>正在合成主播语音驱动...</span>
+                  <span>
+                    {speechEstimate.segmentCount > 1
+                      ? `正在分段合成并拼接 (${speechEstimate.segmentCount} 段)...`
+                      : '正在合成主播语音驱动...'}
+                  </span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>AI 合成语音并驱动主播</span>
+                  <span>
+                    AI 合成语音并驱动主播
+                    {speechEstimate.charCount > 0
+                      ? `（预估 ${speechEstimate.durationSec.toFixed(1)}s）`
+                      : ''}
+                  </span>
                 </>
               )}
             </button>
@@ -2953,6 +3043,9 @@ export function DigitalHumanTab({
             <div className="min-w-0">
               <div className="text-[11px] font-medium text-emerald-200 truncate">
                 驱动音轨就绪 · {drivenAudio.durationSec.toFixed(1)}s
+                {drivenAudio.segmentCount && drivenAudio.segmentCount > 1
+                  ? `（已拼接 ${drivenAudio.segmentCount} 段）`
+                  : ''}
               </div>
               <div className="text-[10px] text-zinc-400 truncate">{drivenAudio.text}</div>
             </div>
