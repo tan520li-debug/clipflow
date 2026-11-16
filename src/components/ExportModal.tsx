@@ -264,6 +264,19 @@ export function ExportModal({
             }
           }
         }
+        if (activeInfo.clip.digitalHuman?.avatarAssetId) {
+          const dhVid = mediaCache.get(activeInfo.clip.digitalHuman.avatarAssetId);
+          if (dhVid instanceof HTMLVideoElement) {
+            const targetDhTime = activeInfo.localTime % Math.max(1, dhVid.duration || 5);
+            if (Math.abs(dhVid.currentTime - targetDhTime) > 0.2) {
+              try {
+                dhVid.currentTime = targetDhTime;
+              } catch {
+                // ignore seek errors
+              }
+            }
+          }
+        }
       }
 
       renderTimelineFrame({
@@ -276,9 +289,20 @@ export function ExportModal({
         assetsMap,
         mediaCache,
         applyTransitionBlurToCanvas: true,
+        voiceoverCues: project.voiceoverCues,
+        voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
       });
     },
-    [project.clips, project.subtitles, assetsMap, mediaCache, outWidth, outHeight]
+    [
+      project.clips,
+      project.subtitles,
+      project.voiceoverCues,
+      project.audio.voiceoverEnabled,
+      assetsMap,
+      mediaCache,
+      outWidth,
+      outHeight,
+    ]
   );
 
   useEffect(() => {
@@ -324,6 +348,8 @@ export function ExportModal({
               assetsMap,
               mediaCache,
               applyTransitionBlurToCanvas: true,
+              voiceoverCues: project.voiceoverCues,
+              voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
             });
             snapshots.push({
               label: pt.label,
@@ -454,6 +480,16 @@ export function ExportModal({
             }
             if (el.paused) void el.play().catch(() => undefined);
           }
+          if (activeInfo.clip.digitalHuman?.avatarAssetId) {
+            const dhVid = mediaCache.get(activeInfo.clip.digitalHuman.avatarAssetId);
+            if (dhVid instanceof HTMLVideoElement) {
+              const targetDhTime = activeInfo.localTime % Math.max(1, dhVid.duration || 5);
+              if (Math.abs(dhVid.currentTime - targetDhTime) > 0.25) {
+                dhVid.currentTime = targetDhTime;
+              }
+              if (dhVid.paused) void dhVid.play().catch(() => undefined);
+            }
+          }
           if (lastClipId && lastClipId !== activeInfo.clip.id && activeInfo.clip.transition !== 'cut') {
             const hasNearbyCustomSfx = (project.sfxEvents ?? []).some(
               (ev) => Math.abs(ev.time - clamped) < 0.35
@@ -477,6 +513,8 @@ export function ExportModal({
           assetsMap,
           mediaCache,
           applyTransitionBlurToCanvas: true,
+          voiceoverCues: project.voiceoverCues,
+          voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
         });
 
         setProgress(Math.min(99, Math.round((clamped / totalDuration) * 100)));

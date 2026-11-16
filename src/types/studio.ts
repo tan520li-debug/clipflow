@@ -133,6 +133,95 @@ export interface ColorAdjustments {
   analysisNote?: string;
 }
 
+export type DigitalHumanPipPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+
+export type DigitalHumanFrameShape = 'circle' | 'rounded-card' | 'portrait-badge';
+
+export type DigitalHumanClipMode = 'pip-overlay' | 'full-scene';
+
+export type DigitalHumanActionId =
+  | 'explain'
+  | 'point'
+  | 'wave'
+  | 'amaze'
+  | 'nod'
+  | 'thumbs-up';
+
+export type DigitalHumanEmotionId =
+  | 'neutral'
+  | 'excited'
+  | 'serious'
+  | 'suspense'
+  | 'warm';
+
+export interface DigitalHumanFacialMuscles {
+  jawOpenness: number; // 0.5 to 1.6
+  browLift: number; // -1.0 to 1.0
+  eyeSquint: number; // 0.0 to 1.0
+  smileCurve: number; // -0.6 to 1.0
+  headTension: number; // 0.4 to 1.5
+  lipSyncSharpness: number; // 0.6 to 1.6
+}
+
+export interface DigitalHumanEmotionAnalysis {
+  emotion: DigitalHumanEmotionId;
+  emotionLabel: string;
+  confidence: number;
+  toneSummary: string;
+  prosodyMetrics?: {
+    energyRms: number;
+    pitchVariance: number;
+    tempoBurstRate: number;
+    pauseRatio: number;
+  };
+  muscles: DigitalHumanFacialMuscles;
+  analyzedAt: string;
+}
+
+export interface DigitalHumanProfile {
+  id: string;
+  name: string;
+  createdAt: string;
+  avatarAssetId?: string;
+  avatarUrl: string;
+  avatarMediaType: 'image' | 'video';
+  personaSummary: string;
+  anchorStyleTags: string[];
+  baseVoice: VoiceoverVoice;
+  voiceDesignPrompt: string;
+  clonedVoiceId?: string;
+  sampleAudioBase64?: string;
+  sampleAudioMimeType?: string;
+  sampleAudioDurationSec?: number;
+  accentColor?: string;
+  defaultAction?: DigitalHumanActionId;
+  defaultEmotion?: DigitalHumanEmotionId;
+  defaultFacialMuscles?: DigitalHumanFacialMuscles;
+}
+
+export interface DigitalHumanClipConfig {
+  profileId: string;
+  profileName: string;
+  avatarAssetId?: string;
+  avatarUrl: string;
+  avatarMediaType: 'image' | 'video';
+  mode: DigitalHumanClipMode;
+  pipPosition: DigitalHumanPipPosition;
+  pipScale: number; // 0.22 to 0.44
+  frameShape: DigitalHumanFrameShape;
+  speechIntensity: number; // 0.4 to 1.5
+  showLiveWaveRing: boolean;
+  action?: DigitalHumanActionId;
+  actionIntensity?: number; // 0.5 to 1.5
+  emotionMatchEnabled?: boolean;
+  emotion?: DigitalHumanEmotionId;
+  facialMuscles?: DigitalHumanFacialMuscles;
+  emotionSummary?: string;
+  spokenScript?: string;
+  linkedCueId?: string;
+  accentColor?: string;
+}
+
 export interface TimelineClip {
   id: string;
   assetId: string;
@@ -148,6 +237,7 @@ export interface TimelineClip {
   transitionMotionBlur?: boolean;
   transitionBlurIntensity?: number;
   colorAdjustments?: ColorAdjustments;
+  digitalHuman?: DigitalHumanClipConfig;
 }
 
 export interface SubtitleSegment {

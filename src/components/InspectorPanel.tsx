@@ -24,6 +24,7 @@ import {
   Square,
   Trash2,
   Upload,
+  UserCheck,
   Volume2,
   Wand2,
 } from 'lucide-react';
@@ -36,6 +37,11 @@ import type {
   ColorAdjustments,
   ColorFilter,
   CopyrightAlternativeTrack,
+  DigitalHumanActionId,
+  DigitalHumanClipConfig,
+  DigitalHumanEmotionId,
+  DigitalHumanFacialMuscles,
+  DigitalHumanProfile,
   MediaAsset,
   MotionType,
   PlatformId,
@@ -61,6 +67,11 @@ import {
   renderColorComparisonThumbnail,
   type LoadedMediaElement,
 } from '../utils/canvasRenderer';
+import { DigitalHumanTab, type DigitalHumanInsertTarget } from './DigitalHumanTab';
+import {
+  getDigitalHumanActionTemplate,
+  getDigitalHumanEmotionPreset,
+} from '../utils/digitalHumanAssets';
 import { TransitionMiniPreview } from './TransitionMiniPreview';
 import { VoiceCloneModal } from './VoiceCloneModal';
 
@@ -109,6 +120,52 @@ interface InspectorPanelProps {
   onRemoveVoiceoverCue: (cueId: string) => void;
   onPreviewVoiceoverCue: (cue: VoiceoverCue) => void;
   onSeek: (timeSec: number) => void;
+  assets: MediaAsset[];
+  digitalHumans: DigitalHumanProfile[];
+  onSaveDigitalHuman: (profile: DigitalHumanProfile) => void;
+  onDeleteDigitalHuman: (profileId: string) => void;
+  onUploadMediaAssetForAnchor: (file: File) => Promise<MediaAsset | null>;
+  onEmbedDigitalHumanPip: (
+    clipId: string,
+    config: DigitalHumanClipConfig,
+    drivenAudio?: {
+      audioBase64: string;
+      mimeType: string;
+      durationSec: number;
+      text: string;
+      baseVoice: VoiceoverVoice;
+      clonedVoiceId?: string;
+    }
+  ) => void;
+  onRemoveClipDigitalHuman: (clipId: string) => void;
+  onUpdateClipDigitalHumanAction: (
+    clipId: string,
+    action: DigitalHumanActionId,
+    actionIntensity?: number
+  ) => void;
+  onUpdateClipDigitalHumanEmotion: (
+    clipId: string,
+    payload: {
+      emotionMatchEnabled: boolean;
+      emotion: DigitalHumanEmotionId;
+      facialMuscles: DigitalHumanFacialMuscles;
+      emotionSummary?: string;
+    }
+  ) => void;
+  onInsertDigitalHumanClip: (params: {
+    insertAt: DigitalHumanInsertTarget;
+    config: DigitalHumanClipConfig;
+    duration: number;
+    transition: TransitionType;
+    drivenAudio?: {
+      audioBase64: string;
+      mimeType: string;
+      durationSec: number;
+      text: string;
+      baseVoice: VoiceoverVoice;
+      clonedVoiceId?: string;
+    };
+  }) => void;
 }
 
 const PRESET_TRANSITIONS: TransitionType[] = [
@@ -257,6 +314,16 @@ export function InspectorPanel({
   onRemoveVoiceoverCue,
   onPreviewVoiceoverCue,
   onSeek,
+  assets,
+  digitalHumans,
+  onSaveDigitalHuman,
+  onDeleteDigitalHuman,
+  onUploadMediaAssetForAnchor,
+  onEmbedDigitalHumanPip,
+  onRemoveClipDigitalHuman,
+  onUpdateClipDigitalHumanAction,
+  onUpdateClipDigitalHumanEmotion,
+  onInsertDigitalHumanClip,
 }: InspectorPanelProps) {
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const speechFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -307,8 +374,10 @@ export function InspectorPanel({
   const [copyrightError, setCopyrightError] = useState<string | null>(null);
   const [copyrightScan, setCopyrightScan] = useState<AudioCopyrightScanResult | null>(null);
   const [appliedAlternativeTitle, setAppliedAlternativeTitle] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<'controls' | 'digital-human'>('controls');
   const activeClonedVoice =
     clonedVoices.find((v) => v.id === audio.activeClonedVoiceId) ?? null;
+  const hasAnyDigitalHumanOnTrack = clips.some((c) => Boolean(c.digitalHuman));
 
   const pairKey = selectedClip && nextClip ? `${selectedClip.id}->${nextClip.id}` : null;
   const selectedClipIndex = selectedClip ? clips.findIndex((c) => c.id === selectedClip.id) : -1;
@@ -1371,26 +1440,116 @@ export function InspectorPanel({
   };
 
   return (
-    <aside className="w-[295px] shrink-0 border-l border-zinc-800/90 bg-[#11141B] flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b border-zinc-800/90 flex items-center justify-between">
-        <h2 className="text-xs font-semibold text-zinc-200">
-          {selectedSubtitle ? '字幕参数调节' : selectedClip ? '片段剪辑参数' : '音频与节奏参数'}
-        </h2>
-        {selectedSubtitle ? (
+    <aside className="w-[318px] shrink-0 border-l border-zinc-800/90 bg-[#11141B] flex flex-col min-h-0">
+      {/* Top Tab Switcher */}
+      <div className="px-2.5 pt-2.5 pb-2 border-b border-zinc-800/90 space-y-2">
+        <div
+          role="tablist"
+          aria-label="属性面板切换"
+          className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#0B0D10] border border-zinc-800/90"
+        >
           <button
             type="button"
-            onClick={onAddSubtitle}
-            className="text-[11px] font-medium text-rose-400 hover:text-rose-300 flex items-center gap-1"
+            role="tab"
+            aria-selected={inspectorTab === 'controls'}
+            onClick={() => setInspectorTab('controls')}
+            className={`py-1.5 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
+              inspectorTab === 'controls'
+                ? 'bg-zinc-800 text-zinc-100 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
           >
-            <Plus className="w-3 h-3" />
-            <span>新增字幕</span>
+            <Sliders className="w-3 h-3 shrink-0" />
+            <span>剪辑与音频</span>
           </button>
-        ) : null}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={inspectorTab === 'digital-human'}
+            onClick={() => setInspectorTab('digital-human')}
+            className={`py-1.5 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
+              inspectorTab === 'digital-human'
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <UserCheck className="w-3 h-3 shrink-0" />
+            <span>数字人克隆与驱动</span>
+            {hasAnyDigitalHumanOnTrack && inspectorTab !== 'digital-human' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
+            )}
+          </button>
+        </div>
+
+        {inspectorTab === 'controls' && (
+          <div className="px-1.5 flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-zinc-300">
+              {selectedSubtitle ? '字幕参数调节' : selectedClip ? '片段剪辑参数' : '音频与节奏参数'}
+            </h2>
+            {selectedSubtitle ? (
+              <button
+                type="button"
+                onClick={onAddSubtitle}
+                className="text-[11px] font-medium text-rose-400 hover:text-rose-300 flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                <span>新增字幕</span>
+              </button>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {inspectorTab === 'digital-human' ? (
+          <DigitalHumanTab
+            selectedClip={selectedClip}
+            selectedClipStartTime={selectedClipStartTime}
+            clips={clips}
+            subtitles={subtitles}
+            assets={assets}
+            clonedVoices={clonedVoices}
+            digitalHumans={digitalHumans}
+            platform={platform}
+            activeVoiceoverVoice={audio.voiceoverVoice ?? 'Kore'}
+            onSaveDigitalHuman={onSaveDigitalHuman}
+            onDeleteDigitalHuman={onDeleteDigitalHuman}
+            onUploadMediaAssetForAnchor={onUploadMediaAssetForAnchor}
+            onEmbedDigitalHumanPip={onEmbedDigitalHumanPip}
+            onRemoveClipDigitalHuman={onRemoveClipDigitalHuman}
+            onUpdateClipDigitalHumanAction={onUpdateClipDigitalHumanAction}
+            onUpdateClipDigitalHumanEmotion={onUpdateClipDigitalHumanEmotion}
+            onInsertDigitalHumanClip={onInsertDigitalHumanClip}
+          />
+        ) : (
+          <>
         {selectedClip && !selectedSubtitle ? (
           <div className="space-y-4">
+            {selectedClip.digitalHuman && (
+              <div className="rounded-lg border border-violet-500/40 bg-violet-950/25 px-3 py-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold text-violet-200 truncate">
+                    {selectedClip.digitalHuman.mode === 'full-scene'
+                      ? `数字人主播镜头 · ${selectedClip.digitalHuman.profileName}`
+                      : `已嵌入画中画数字人 · ${selectedClip.digitalHuman.profileName}`}
+                  </div>
+                  <div className="text-[10px] text-cyan-300 truncate mt-0.5">
+                    姿态：{getDigitalHumanActionTemplate(selectedClip.digitalHuman.action).label}
+                    {selectedClip.digitalHuman.emotionMatchEnabled !== false &&
+                    selectedClip.digitalHuman.emotion
+                      ? ` · 情感：${getDigitalHumanEmotionPreset(selectedClip.digitalHuman.emotion).label}`
+                      : ''}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab('digital-human')}
+                  className="text-[10px] font-medium text-violet-300 hover:text-white shrink-0"
+                >
+                  调节参数 →
+                </button>
+              </div>
+            )}
             <div>
               <label htmlFor="clip-label" className="block text-[11px] text-zinc-400 mb-1">
                 片段名称
@@ -3834,6 +3993,8 @@ export function InspectorPanel({
             )}
           </div>
         </div>
+          </>
+        )}
       </div>
       {voiceCloneModalOpen && (
         <VoiceCloneModal

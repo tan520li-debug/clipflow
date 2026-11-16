@@ -40,6 +40,8 @@ function MiniCanvasSnapshot({
       subtitles: project.subtitles,
       assetsMap,
       mediaCache,
+      voiceoverCues: project.voiceoverCues,
+      voiceoverEnabled: Boolean(project.audio.voiceoverEnabled),
     });
   }, [project, assetsMap, mediaCache]);
 

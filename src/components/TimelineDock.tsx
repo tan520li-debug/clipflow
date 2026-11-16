@@ -9,6 +9,10 @@ import type {
   VoiceoverCue,
 } from '../types/studio';
 import { formatTimecode, getTotalDuration } from '../utils/autoEditEngine';
+import {
+  getDigitalHumanActionTemplate,
+  getDigitalHumanEmotionPreset,
+} from '../utils/digitalHumanAssets';
 
 interface TimelineDockProps {
   clips: TimelineClip[];
@@ -190,6 +194,14 @@ export function TimelineDock({
                 const asset = assetsMap.get(clip.assetId);
                 const isSelected = selectedClipId === clip.id && !selectedSubtitleId;
 
+                const hasDhFull = clip.digitalHuman?.mode === 'full-scene';
+                const hasDhPip = clip.digitalHuman?.mode === 'pip-overlay';
+                const thumbUrl = hasDhFull
+                  ? clip.digitalHuman?.avatarUrl
+                  : asset && asset.type === 'image'
+                    ? asset.url
+                    : undefined;
+
                 return (
                   <button
                     key={clip.id}
@@ -206,16 +218,27 @@ export function TimelineDock({
                     className={`h-[50px] rounded-md overflow-hidden border text-left transition-colors flex items-center gap-2 px-2 ${
                       isSelected
                         ? 'border-rose-500 bg-rose-950/35 ring-1 ring-rose-500/40'
-                        : 'border-zinc-700/80 bg-[#171B24] hover:border-zinc-500'
+                        : hasDhFull
+                          ? 'border-violet-500/60 bg-violet-950/30 hover:border-violet-400'
+                          : 'border-zinc-700/80 bg-[#171B24] hover:border-zinc-500'
                     }`}
                   >
-                    {asset && asset.type === 'image' && (
-                      <img
-                        src={asset.url}
-                        alt={clip.label}
-                        referrerPolicy="no-referrer"
-                        className="w-7 h-9 rounded-sm object-cover shrink-0 border border-zinc-700/60"
-                      />
+                    {thumbUrl && (
+                      <div className="relative shrink-0">
+                        <img
+                          src={thumbUrl}
+                          alt={clip.label}
+                          referrerPolicy="no-referrer"
+                          className="w-7 h-9 rounded-sm object-cover border border-zinc-700/60"
+                        />
+                        {hasDhPip && clip.digitalHuman?.avatarUrl && (
+                          <img
+                            src={clip.digitalHuman.avatarUrl}
+                            alt={clip.digitalHuman.profileName}
+                            className="w-4 h-4 rounded-full object-cover border border-violet-400 absolute -bottom-1 -right-1 shadow"
+                          />
+                        )}
+                      </div>
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-medium text-zinc-100 truncate">
@@ -223,6 +246,23 @@ export function TimelineDock({
                       </p>
                       <p className="text-[10px] font-mono-nums text-zinc-400 truncate">
                         {clip.duration.toFixed(1)}s · {TRANSITION_LABELS[clip.transition]}
+                        {hasDhFull
+                          ? ` · 数字人主播[${getDigitalHumanActionTemplate(clip.digitalHuman?.action).label}${
+                              clip.digitalHuman?.emotionMatchEnabled !== false &&
+                              clip.digitalHuman?.emotion &&
+                              clip.digitalHuman.emotion !== 'neutral'
+                                ? `/${getDigitalHumanEmotionPreset(clip.digitalHuman.emotion).label}`
+                                : ''
+                            }]`
+                          : hasDhPip
+                            ? ` · +数字人PiP[${getDigitalHumanActionTemplate(clip.digitalHuman?.action).label}${
+                                clip.digitalHuman?.emotionMatchEnabled !== false &&
+                                clip.digitalHuman?.emotion &&
+                                clip.digitalHuman.emotion !== 'neutral'
+                                  ? `/${getDigitalHumanEmotionPreset(clip.digitalHuman.emotion).label}`
+                                  : ''
+                              }]`
+                            : ''}
                         {clip.transitionMotionBlur ? ' · 动态模糊' : ''}
                         {clip.motionSmoothing ? ' · 光流平滑' : ''}
                       </p>

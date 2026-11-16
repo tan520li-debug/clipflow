@@ -2178,6 +2178,397 @@ Output ONLY a single JSON object (no markdown commentary outside JSON) in Simpli
   }
 });
 
+app.post('/api/digital-human/clone', async (req, res) => {
+  try {
+    const {
+      anchorName = '我的虚拟主播',
+      imageBase64 = '',
+      imageMimeType = 'image/jpeg',
+      audioBase64 = '',
+      audioMimeType = 'audio/webm',
+      styleHint = '',
+      generateGreeting = false,
+    } = req.body ?? {};
+
+    const cleanImg =
+      typeof imageBase64 === 'string' && imageBase64.length > 100
+        ? imageBase64.includes(',')
+          ? imageBase64.split(',')[1]
+          : imageBase64
+        : '';
+    const cleanAudio =
+      typeof audioBase64 === 'string' && audioBase64.length > 200
+        ? audioBase64.includes(',')
+          ? audioBase64.split(',')[1]
+          : audioBase64
+        : '';
+
+    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+    if (cleanImg) {
+      parts.push({
+        inlineData: {
+          mimeType:
+            typeof imageMimeType === 'string' && imageMimeType.startsWith('image/')
+              ? imageMimeType
+              : 'image/jpeg',
+          data: cleanImg,
+        },
+      });
+    }
+    if (cleanAudio) {
+      parts.push({
+        inlineData: {
+          mimeType:
+            typeof audioMimeType === 'string' && audioMimeType.startsWith('audio/')
+              ? audioMimeType.split(';')[0]
+              : 'audio/webm',
+          data: cleanAudio,
+        },
+      });
+    }
+
+    parts.push({
+      text: `You are a virtual digital human cloning & short-video anchor director.
+Analyze the provided visual appearance (if image supplied), voice sample (if audio supplied), and creator hints to build a consistent digital human anchor persona.
+Anchor Name: "${String(anchorName).trim()}"
+Creator Style Hint: "${String(styleHint || '').trim() || '自然真实短视频口播虚拟主播'}"
+
+Map the persona to the best matching foundational TTS voice among:
+- "Kore": warm, expressive female or lighter mid-high conversational register
+- "Zephyr": bright, agile, youthful neutral-light register
+- "Puck": energetic, crisp, bouncy creator register
+- "Charon": calm, grounded, steady storytelling mid-low register
+- "Fenrir": deep, resonant, husky/magnetic low male register
+
+Return JSON describing the cloned virtual anchor persona, 3 concise Simplified Chinese style tags, English Voice Design prompt, studio accent hex color, and a catchy 1-sentence Chinese greeting line.`,
+    });
+
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: { parts: parts as never },
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            personaSummary: {
+              type: Type.STRING,
+              description: 'Concise Simplified Chinese anchor profile summary (max 45 chars).',
+            },
+            anchorStyleTags: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '3 short Chinese tags (each 2-5 chars).',
+            },
+            recommendedBaseVoice: {
+              type: Type.STRING,
+              description: 'One of Kore, Zephyr, Puck, Charon, Fenrir.',
+            },
+            voiceDesignPrompt: {
+              type: Type.STRING,
+              description: 'English TTS voice design style prompt (30-55 words).',
+            },
+            accentColor: {
+              type: Type.STRING,
+              description: 'Hex color matching studio lighting/outfit, e.g. #fb7185 or #38bdf8.',
+            },
+            recommendedSampleLine: {
+              type: Type.STRING,
+              description: 'Short welcoming Chinese anchor intro sentence (14-32 chars).',
+            },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse((response.text ?? '{}').trim()) as Record<string, unknown>;
+    const validVoices = new Set(['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir']);
+    const baseVoice = validVoices.has(String(parsed?.recommendedBaseVoice))
+      ? String(parsed.recommendedBaseVoice)
+      : 'Kore';
+    const voiceDesignPrompt =
+      typeof parsed?.voiceDesignPrompt === 'string' && parsed.voiceDesignPrompt.trim()
+        ? parsed.voiceDesignPrompt.trim()
+        : 'Natural, engaging short-video digital human anchor with warm conversational cadence and clear studio articulation.';
+    const sampleLine =
+      typeof parsed?.recommendedSampleLine === 'string' && parsed.recommendedSampleLine.trim()
+        ? parsed.recommendedSampleLine.trim()
+        : `大家好，我是虚拟主播${String(anchorName).trim()}，今天带大家一起看重点！`;
+
+    let sampleAudioBase64: string | undefined;
+    let sampleAudioMimeType: string | undefined;
+    let sampleAudioDurationSec: number | undefined;
+
+    if (generateGreeting && !cleanAudio) {
+      try {
+        const inline = await synthesizeStyledSpeech(ai, {
+          model: 'gemini-3.8-flash-tts',
+          voiceName: baseVoice,
+          spokenText: `<breath> ${sampleLine}`,
+          stylePrompt: voiceDesignPrompt,
+        });
+        sampleAudioBase64 = inline.data;
+        sampleAudioMimeType = inline.mimeType || 'audio/wav';
+        sampleAudioDurationSec = getWavDurationSec(inline.data) ?? undefined;
+      } catch {
+        // Non-fatal: anchor clone still completes cleanly even if TTS greeting quota is limited
+      }
+    }
+
+    const accentRaw = typeof parsed?.accentColor === 'string' ? parsed.accentColor.trim() : '';
+    const accentColor = /^#[0-9a-fA-F]{6}$/.test(accentRaw) ? accentRaw : '#fb7185';
+
+    return res.json({
+      personaSummary:
+        typeof parsed?.personaSummary === 'string' && parsed.personaSummary.trim()
+          ? parsed.personaSummary.trim()
+          : '真实质感短视频虚拟主播分身，镜头表现力稳定自然',
+      anchorStyleTags:
+        Array.isArray(parsed?.anchorStyleTags) && parsed.anchorStyleTags.length > 0
+          ? parsed.anchorStyleTags.slice(0, 3).map((t: unknown) => String(t))
+          : ['虚拟分身', '自然口播', '混剪适配'],
+      baseVoice,
+      voiceDesignPrompt,
+      accentColor,
+      recommendedSampleLine: sampleLine,
+      sampleAudioBase64,
+      sampleAudioMimeType,
+      sampleAudioDurationSec,
+    });
+  } catch (err: unknown) {
+    console.error('[api/digital-human/clone] error:', err);
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'AI 形象分析调用额度已达当前上限，请稍后再试。',
+      });
+    }
+    const message =
+      err instanceof Error ? err.message : '虚拟主播克隆分析失败，请稍后重试。';
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/digital-human/drive', async (req, res) => {
+  try {
+    const {
+      anchorName = '虚拟主播',
+      scriptText = '',
+      baseVoice = 'Kore',
+      voiceDesignPrompt = '',
+      expressiveness = 0.78,
+    } = req.body ?? {};
+
+    if (!scriptText || typeof scriptText !== 'string' || !scriptText.trim()) {
+      return res.status(400).json({ error: '请输入数字人口播台词内容。' });
+    }
+
+    const validVoices = new Set(['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir']);
+    const safeVoice = validVoices.has(String(baseVoice)) ? String(baseVoice) : 'Kore';
+    const expVal = Math.max(0.2, Math.min(1, Number(expressiveness) || 0.78));
+    const expDirective =
+      expVal >= 0.78
+        ? 'Vivid short-video host delivery with warm breathing, natural emphasis, and engaging camera presence'
+        : 'Balanced, clear, friendly studio presenter cadence';
+
+    const stylePrompt = `${
+      typeof voiceDesignPrompt === 'string' && voiceDesignPrompt.trim()
+        ? voiceDesignPrompt.trim()
+        : `Virtual presenter ${String(anchorName).trim()} speaking smoothly to camera.`
+    }. ${expDirective}`;
+
+    const ai = getGeminiClient();
+    const inline = await synthesizeStyledSpeech(ai, {
+      model: 'gemini-3.8-flash-tts',
+      voiceName: safeVoice,
+      spokenText: `<breath> ${scriptText.trim().slice(0, 260)}`,
+      stylePrompt,
+    });
+
+    const durationSec = getWavDurationSec(inline.data);
+    return res.json({
+      audioBase64: inline.data,
+      mimeType: inline.mimeType || 'audio/wav',
+      audioDurationSec: durationSec ?? Number(Math.max(2, scriptText.trim().length * 0.24).toFixed(2)),
+    });
+  } catch (err: unknown) {
+    console.error('[api/digital-human/drive] error:', err);
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'AI 语音驱动调用额度已达当前上限，您可直接使用下方「麦克风录制原声 / 导入音频」实时驱动数字人。',
+      });
+    }
+    if (isServiceBusyError(err)) {
+      return res.status(503).json({
+        error: 'AI 语音合成服务高峰拥挤，请稍后重试或使用麦克风直录驱动。',
+      });
+    }
+    const message =
+      err instanceof Error ? err.message : '数字人语音驱动合成失败，请稍后重试。';
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/digital-human/analyze-emotion', async (req, res) => {
+  try {
+    const {
+      audioBase64,
+      mimeType = 'audio/wav',
+      scriptText = '',
+      prosodyMetrics,
+      anchorName = '虚拟主播',
+    } = req.body ?? {};
+
+    const cleanAudio =
+      typeof audioBase64 === 'string' && audioBase64.trim()
+        ? audioBase64.includes(',')
+          ? audioBase64.split(',')[1]
+          : audioBase64.trim()
+        : '';
+
+    const hasScript = typeof scriptText === 'string' && scriptText.trim().length > 0;
+    if (!cleanAudio && !hasScript) {
+      return res.status(400).json({ error: '请先录制、导入或合成一段语音（或输入口播台词）后再进行情感匹配分析。' });
+    }
+
+    const ai = getGeminiClient();
+    const parts: Array<Record<string, unknown>> = [];
+
+    if (cleanAudio) {
+      parts.push({
+        inlineData: {
+          mimeType: typeof mimeType === 'string' && mimeType ? mimeType : 'audio/wav',
+          data: cleanAudio,
+        },
+      });
+    }
+
+    const metricsSummary = prosodyMetrics
+      ? `声学语调指标: RMS能量=${prosodyMetrics.energyRms ?? 'N/A'}, 音高方差=${prosodyMetrics.pitchVariance ?? 'N/A'}, 音节爆发率=${prosodyMetrics.tempoBurstRate ?? 'N/A'}/s, 停顿比=${prosodyMetrics.pauseRatio ?? 'N/A'}`
+      : '';
+
+    parts.push({
+      text: `你是一名数字人面部绑定与语音情感驱动专家。请结合提供的人声语调音频（若有）与台词文本，分析说话人的情感基调，并为数字人「${String(anchorName).trim()}」匹配最契合的面部肌肉驱动参数。
+可选情感分类 emotion 仅限：
+- "excited"（兴奋：高亢热情、种草爆点、积极感染力）
+- "serious"（严肃：权威评测、冷静剖析、警示对比）
+- "suspense"（悬疑：压低或挑起尾音、留白停顿、揭秘反转）
+- "warm"（亲和：温柔分享、日常陪伴、轻松对话）
+- "neutral"（自然：平稳标准口播）
+
+口播台词：${hasScript ? String(scriptText).trim().slice(0, 300) : '（未提供文字，请直接根据音频语调判断）'}
+${metricsSummary}
+
+请返回 JSON，确保面部肌肉参数严格处于指定范围：
+- jawOpenness: 0.5 ~ 1.6（张口幅度，兴奋偏大 1.25-1.5，严肃偏克制 0.8-0.95）
+- browLift: -1.0 ~ 1.0（眉弓抬升：正值挑眉兴奋/惊奇，负值沉眉严肃）
+- eyeSquint: 0.0 ~ 1.0（眼神聚焦微眯程度，悬疑/严肃偏高 0.45-0.8）
+- smileCurve: -0.6 ~ 1.0（嘴角上扬/收敛弧度，兴奋/亲和正值，严肃/悬疑负值）
+- headTension: 0.4 ~ 1.5（头部运动张力与节奏速度）
+- lipSyncSharpness: 0.6 ~ 1.6（唇肌咬字开合锐度）
+- toneSummary: 一句 25-55 字的中文语调分析与肌肉微调说明。`,
+    });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: [{ role: 'user', parts: parts as never }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            emotion: { type: Type.STRING },
+            emotionLabel: { type: Type.STRING },
+            confidence: { type: Type.NUMBER },
+            toneSummary: { type: Type.STRING },
+            muscles: {
+              type: Type.OBJECT,
+              properties: {
+                jawOpenness: { type: Type.NUMBER },
+                browLift: { type: Type.NUMBER },
+                eyeSquint: { type: Type.NUMBER },
+                smileCurve: { type: Type.NUMBER },
+                headTension: { type: Type.NUMBER },
+                lipSyncSharpness: { type: Type.NUMBER },
+              },
+            },
+          },
+          required: ['emotion', 'emotionLabel', 'toneSummary', 'muscles'],
+        },
+      },
+    });
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      const rawJson = (response.text || '{}')
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '');
+      parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    } catch {
+      const jsonMatch = (response.text || '').match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        } catch {
+          parsed = {};
+        }
+      }
+    }
+    const validEmotions = new Set(['neutral', 'excited', 'serious', 'suspense', 'warm']);
+    const rawEmotion = String(parsed?.emotion || 'neutral');
+    const emotion = validEmotions.has(rawEmotion) ? rawEmotion : 'neutral';
+
+    const labelMap: Record<string, string> = {
+      excited: '兴奋',
+      serious: '严肃',
+      suspense: '悬疑',
+      warm: '亲和',
+      neutral: '自然',
+    };
+
+    const rawMuscles = (parsed?.muscles ?? {}) as Record<string, unknown>;
+    const clampNum = (val: unknown, min: number, max: number, fallback: number) => {
+      const num = typeof val === 'number' && Number.isFinite(val) ? val : Number(val);
+      if (!Number.isFinite(num)) return fallback;
+      return Number(Math.max(min, Math.min(max, num)).toFixed(2));
+    };
+
+    return res.json({
+      emotion,
+      emotionLabel:
+        typeof parsed?.emotionLabel === 'string' && parsed.emotionLabel.trim()
+          ? parsed.emotionLabel.trim()
+          : labelMap[emotion],
+      confidence: clampNum(parsed?.confidence, 0.5, 0.99, 0.88),
+      toneSummary:
+        typeof parsed?.toneSummary === 'string' && parsed.toneSummary.trim()
+          ? parsed.toneSummary.trim()
+          : '已完成音频语调分析，并同步校准数字人面部肌肉驱动参数。',
+      muscles: {
+        jawOpenness: clampNum(rawMuscles.jawOpenness, 0.5, 1.6, 1.05),
+        browLift: clampNum(rawMuscles.browLift, -1.0, 1.0, 0),
+        eyeSquint: clampNum(rawMuscles.eyeSquint, 0.0, 1.0, 0.25),
+        smileCurve: clampNum(rawMuscles.smileCurve, -0.6, 1.0, 0.2),
+        headTension: clampNum(rawMuscles.headTension, 0.4, 1.5, 1.0),
+        lipSyncSharpness: clampNum(rawMuscles.lipSyncSharpness, 0.6, 1.6, 1.05),
+      },
+      analyzedAt: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    console.error('[api/digital-human/analyze-emotion] error:', err);
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'AI 情感分析调用额度已达当前上限，已使用本地声学语调分析引擎匹配面部肌肉参数。',
+      });
+    }
+    const message =
+      err instanceof Error ? err.message : '音频情感匹配分析失败，请稍后重试。';
+    return res.status(500).json({ error: message });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

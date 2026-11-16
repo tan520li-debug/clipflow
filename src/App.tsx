@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BriefAndMediaPanel } from './components/BriefAndMediaPanel';
 import { ExportModal } from './components/ExportModal';
+import type { DigitalHumanInsertTarget } from './components/DigitalHumanTab';
 import { InspectorPanel } from './components/InspectorPanel';
 import { MediaLibraryView } from './components/MediaLibraryView';
 import { MultiPlatformMatrixView } from './components/MultiPlatformMatrixView';
@@ -13,6 +14,11 @@ import type {
   AutoEditApiResponse,
   BgmPreset,
   ClonedVoiceProfile,
+  DigitalHumanActionId,
+  DigitalHumanClipConfig,
+  DigitalHumanEmotionId,
+  DigitalHumanFacialMuscles,
+  DigitalHumanProfile,
   EditingStyle,
   MediaAiTags,
   MediaAsset,
@@ -24,6 +30,7 @@ import type {
   TimelineClip,
   TransitionType,
   VoiceoverCue,
+  VoiceoverVoice,
   WorkspaceView,
 } from './types/studio';
 import { StudioAudioEngine } from './utils/audioEngine';
@@ -42,6 +49,7 @@ import {
   renderTimelineFrame,
   type LoadedMediaElement,
 } from './utils/canvasRenderer';
+import { primeVoiceEnvelopeCache } from './utils/digitalHumanAssets';
 
 export default function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>('editor');
@@ -86,6 +94,17 @@ export default function App() {
     }
   });
 
+  const [digitalHumans, setDigitalHumans] = useState<DigitalHumanProfile[]>(() => {
+    try {
+      const raw = window.localStorage.getItem('clipflow_digital_humans_v1');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as DigitalHumanProfile[]) : [];
+    } catch {
+      return [];
+    }
+  });
+
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -96,6 +115,17 @@ export default function App() {
       // ignore storage quota errors
     }
   }, [clonedVoices]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'clipflow_digital_humans_v1',
+        JSON.stringify(digitalHumans.slice(0, 6))
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [digitalHumans]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaCacheRef = useRef<Map<string, LoadedMediaElement>>(new Map());
@@ -196,6 +226,10 @@ export default function App() {
     };
   }, [activePlatform, currentProject.voiceoverCues]);
 
+  useEffect(() => {
+    primeVoiceEnvelopeCache(currentProject.voiceoverCues ?? []);
+  }, [currentProject.voiceoverCues]);
+
   // Render single frame whenever paused / state changes
   const drawFrameAt = useCallback(
     (timeSec: number) => {
@@ -218,6 +252,20 @@ export default function App() {
             el.pause();
           }
         }
+        if (activeInfo.clip.digitalHuman?.avatarAssetId) {
+          const dhEl = mediaCacheRef.current.get(activeInfo.clip.digitalHuman.avatarAssetId);
+          if (dhEl instanceof HTMLVideoElement) {
+            const targetDhTime = activeInfo.localTime % Math.max(1, dhEl.duration || 5);
+            if (!isPlaying || Math.abs(dhEl.currentTime - targetDhTime) > 0.25) {
+              dhEl.currentTime = Math.min(Math.max(0, dhEl.duration || 10), targetDhTime);
+            }
+            if (isPlaying && dhEl.paused) {
+              void dhEl.play().catch(() => undefined);
+            } else if (!isPlaying && !dhEl.paused) {
+              dhEl.pause();
+            }
+          }
+        }
       }
 
       renderTimelineFrame({
@@ -229,9 +277,18 @@ export default function App() {
         subtitles: currentProject.subtitles,
         assetsMap,
         mediaCache: mediaCacheRef.current,
+        voiceoverCues: currentProject.voiceoverCues,
+        voiceoverEnabled: Boolean(currentProject.audio.voiceoverEnabled),
       });
     },
-    [currentProject.clips, currentProject.subtitles, assetsMap, isPlaying]
+    [
+      currentProject.clips,
+      currentProject.subtitles,
+      currentProject.voiceoverCues,
+      currentProject.audio.voiceoverEnabled,
+      assetsMap,
+      isPlaying,
+    ]
   );
 
   useEffect(() => {
@@ -1027,6 +1084,381 @@ export default function App() {
     }
   };
 
+  const handleSaveDigitalHuman = (profile: DigitalHumanProfile) => {
+    setDigitalHumans((prev) => [profile, ...prev.filter((p) => p.id !== profile.id)]);
+  };
+
+  const handleDeleteDigitalHuman = (profileId: string) => {
+    setDigitalHumans((prev) => prev.filter((p) => p.id !== profileId));
+  };
+
+  const handleUploadMediaAssetForAnchor = (file: File): Promise<MediaAsset | null> => {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      const isVideo = file.type.startsWith('video/');
+
+      if (isVideo) {
+        const probe = document.createElement('video');
+        probe.preload = 'auto';
+        probe.muted = true;
+        probe.onloadeddata = () => {
+          const asset: MediaAsset = {
+            id: `dh-upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            type: 'video',
+            url,
+            duration: Math.max(1.5, probe.duration || 5),
+            width: probe.videoWidth || 1080,
+            height: probe.videoHeight || 1920,
+            source: 'upload',
+            fileSizeLabel: `${sizeMb}MB`,
+          };
+          setAssets((prev) => [asset, ...prev]);
+          void autoTagUploadedAsset(asset, probe);
+          resolve(asset);
+        };
+        probe.onerror = () => resolve(null);
+        probe.src = url;
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          const asset: MediaAsset = {
+            id: `dh-upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            type: 'image',
+            url,
+            duration: 5,
+            width: img.naturalWidth || 1080,
+            height: img.naturalHeight || 1920,
+            source: 'upload',
+            fileSizeLabel: `${sizeMb}MB`,
+          };
+          setAssets((prev) => [asset, ...prev]);
+          void autoTagUploadedAsset(asset, img);
+          resolve(asset);
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      }
+    });
+  };
+
+  const handleEmbedDigitalHumanPip = (
+    clipId: string,
+    config: DigitalHumanClipConfig,
+    drivenAudio?: {
+      audioBase64: string;
+      mimeType: string;
+      durationSec: number;
+      text: string;
+      baseVoice: VoiceoverVoice;
+      clonedVoiceId?: string;
+    }
+  ) => {
+    let targetStart = 0;
+    let targetDuration = 3;
+    for (const c of currentProject.clips) {
+      if (c.id === clipId) {
+        targetDuration = c.duration;
+        break;
+      }
+      targetStart += c.duration;
+    }
+
+    const linkedCueId = drivenAudio ? `dh-cue-${Date.now()}` : config.linkedCueId;
+    const finalConfig: DigitalHumanClipConfig = {
+      ...config,
+      mode: 'pip-overlay',
+      linkedCueId,
+    };
+
+    updateCurrentProject((prev) => {
+      const updatedClips = prev.clips.map((c) =>
+        c.id === clipId ? { ...c, digitalHuman: finalConfig } : c
+      );
+
+      let nextSubtitles = prev.subtitles;
+      let nextCues = prev.voiceoverCues ?? [];
+      let nextAudio = prev.audio;
+
+      if (drivenAudio && linkedCueId) {
+        const subId = `dh-sub-${Date.now()}`;
+        const cueDuration = Math.max(0.8, drivenAudio.durationSec);
+        const clipEnd = targetStart + targetDuration;
+
+        // Replace overlapping cue/sub inside this clip window to keep speech clean
+        nextCues = nextCues.filter((cue) => {
+          const mid = cue.startTime + cue.duration / 2;
+          return mid < targetStart || mid > clipEnd;
+        });
+        nextCues = [
+          ...nextCues,
+          {
+            id: linkedCueId,
+            subtitleId: subId,
+            startTime: Number(targetStart.toFixed(2)),
+            duration: cueDuration,
+            text: drivenAudio.text,
+            audioBase64: drivenAudio.audioBase64,
+            mimeType: drivenAudio.mimeType,
+            voiceName: drivenAudio.baseVoice,
+            source: 'ai-tts' as const,
+            clonedVoiceId: drivenAudio.clonedVoiceId,
+            audioDurationSec: cueDuration,
+          },
+        ].sort((a, b) => a.startTime - b.startTime);
+
+        nextSubtitles = nextSubtitles.filter((s) => {
+          const mid = s.startTime + s.duration / 2;
+          return mid < targetStart || mid > clipEnd;
+        });
+        nextSubtitles = [
+          ...nextSubtitles,
+          {
+            id: subId,
+            startTime: Number(targetStart.toFixed(2)),
+            duration: cueDuration,
+            text: drivenAudio.text,
+            style: PLATFORM_META[prev.platform].defaultSubtitleStyle,
+            position: 'bottom' as const,
+          },
+        ].sort((a, b) => a.startTime - b.startTime);
+
+        nextAudio = {
+          ...prev.audio,
+          voiceoverEnabled: true,
+          bgmAutoDucking: true,
+        };
+      }
+
+      const nextState: PlatformProjectState = {
+        ...prev,
+        clips: updatedClips,
+        subtitles: nextSubtitles,
+        voiceoverCues: nextCues,
+        audio: nextAudio,
+      };
+      return drivenAudio ? alignProjectTimelineToVoiceover(nextState, nextCues) : nextState;
+    });
+
+    setCurrentTime(targetStart + 0.05);
+  };
+
+  const handleRemoveClipDigitalHuman = (clipId: string) => {
+    updateCurrentProject((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) => (c.id === clipId ? { ...c, digitalHuman: undefined } : c)),
+    }));
+  };
+
+  const handleUpdateClipDigitalHumanAction = (
+    clipId: string,
+    action: DigitalHumanActionId,
+    actionIntensity?: number
+  ) => {
+    updateCurrentProject((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) =>
+        c.id === clipId && c.digitalHuman
+          ? {
+              ...c,
+              digitalHuman: {
+                ...c.digitalHuman,
+                action,
+                actionIntensity: actionIntensity ?? c.digitalHuman.actionIntensity ?? 1,
+              },
+            }
+          : c
+      ),
+    }));
+  };
+
+  const handleUpdateClipDigitalHumanEmotion = (
+    clipId: string,
+    payload: {
+      emotionMatchEnabled: boolean;
+      emotion: DigitalHumanEmotionId;
+      facialMuscles: DigitalHumanFacialMuscles;
+      emotionSummary?: string;
+    }
+  ) => {
+    updateCurrentProject((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) =>
+        c.id === clipId && c.digitalHuman
+          ? {
+              ...c,
+              digitalHuman: {
+                ...c.digitalHuman,
+                emotionMatchEnabled: payload.emotionMatchEnabled,
+                emotion: payload.emotion,
+                facialMuscles: payload.facialMuscles,
+                emotionSummary: payload.emotionSummary,
+              },
+            }
+          : c
+      ),
+    }));
+  };
+
+  const handleInsertDigitalHumanClip = ({
+    insertAt,
+    config,
+    duration,
+    transition,
+    drivenAudio,
+  }: {
+    insertAt: DigitalHumanInsertTarget;
+    config: DigitalHumanClipConfig;
+    duration: number;
+    transition: TransitionType;
+    drivenAudio?: {
+      audioBase64: string;
+      mimeType: string;
+      durationSec: number;
+      text: string;
+      baseVoice: VoiceoverVoice;
+      clonedVoiceId?: string;
+    };
+  }) => {
+    // Ensure a MediaAsset exists for the digital human anchor so asset lookup & timeline thumbnails work
+    let anchorAssetId = config.avatarAssetId;
+    if (!anchorAssetId || !assetsMap.has(anchorAssetId)) {
+      const existing = assets.find((a) => a.url === config.avatarUrl);
+      if (existing) {
+        anchorAssetId = existing.id;
+      } else {
+        const newAsset: MediaAsset = {
+          id: `dh-asset-${Date.now()}`,
+          name: `数字人-${config.profileName}`,
+          type: config.avatarMediaType,
+          url: config.avatarUrl,
+          duration: Math.max(duration, 5),
+          width: 540,
+          height: 960,
+          source: 'upload',
+        };
+        anchorAssetId = newAsset.id;
+        setAssets((prev) => [newAsset, ...prev]);
+      }
+    }
+
+    const newClipId = `${activePlatform}-dh-${Date.now()}`;
+    const linkedCueId = drivenAudio ? `dh-cue-${Date.now()}` : undefined;
+    const finalConfig: DigitalHumanClipConfig = {
+      ...config,
+      avatarAssetId: anchorAssetId,
+      mode: 'full-scene',
+      linkedCueId,
+    };
+
+    const newClip: TimelineClip = {
+      id: newClipId,
+      assetId: anchorAssetId,
+      label: `数字人·${config.profileName}`,
+      trimStart: 0,
+      duration: Number(duration.toFixed(2)),
+      transition,
+      motion: 'static',
+      filter: 'natural',
+      speed: 1,
+      hookTag: insertAt === 'start' ? '数字人开场钩子' : undefined,
+      digitalHuman: finalConfig,
+    };
+
+    let insertedStartTime = 0;
+
+    updateCurrentProject((prev) => {
+      let insertIdx = prev.clips.length;
+      if (insertAt === 'start') {
+        insertIdx = 0;
+      } else if (insertAt === 'before') {
+        insertIdx = Math.max(0, selectedClipIndex >= 0 ? selectedClipIndex : 0);
+      } else if (insertAt === 'after') {
+        insertIdx =
+          selectedClipIndex >= 0 ? Math.min(prev.clips.length, selectedClipIndex + 1) : prev.clips.length;
+      }
+
+      insertedStartTime = prev.clips
+        .slice(0, insertIdx)
+        .reduce((sum, c) => sum + c.duration, 0);
+
+      const nextClips = [...prev.clips];
+      nextClips.splice(insertIdx, 0, newClip);
+
+      // Shift all subtitles, voiceover cues, and SFX at or after insertedStartTime forward by duration
+      let nextSubtitles = prev.subtitles.map((s) =>
+        s.startTime >= insertedStartTime - 0.05
+          ? { ...s, startTime: Number((s.startTime + duration).toFixed(2)) }
+          : s
+      );
+      let nextCues = (prev.voiceoverCues ?? []).map((cue) =>
+        cue.startTime >= insertedStartTime - 0.05
+          ? { ...cue, startTime: Number((cue.startTime + duration).toFixed(2)) }
+          : cue
+      );
+      const nextSfx = (prev.sfxEvents ?? []).map((ev) =>
+        ev.time >= insertedStartTime - 0.05
+          ? { ...ev, time: Number((ev.time + duration).toFixed(2)) }
+          : ev
+      );
+
+      let nextAudio = prev.audio;
+      if (drivenAudio && linkedCueId) {
+        const subId = `dh-sub-${Date.now()}`;
+        const cueDur = Math.min(duration, Math.max(0.8, drivenAudio.durationSec));
+        nextCues = [
+          ...nextCues,
+          {
+            id: linkedCueId,
+            subtitleId: subId,
+            startTime: Number(insertedStartTime.toFixed(2)),
+            duration: cueDur,
+            text: drivenAudio.text,
+            audioBase64: drivenAudio.audioBase64,
+            mimeType: drivenAudio.mimeType,
+            voiceName: drivenAudio.baseVoice,
+            source: 'ai-tts' as const,
+            clonedVoiceId: drivenAudio.clonedVoiceId,
+            audioDurationSec: cueDur,
+          },
+        ].sort((a, b) => a.startTime - b.startTime);
+
+        nextSubtitles = [
+          ...nextSubtitles,
+          {
+            id: subId,
+            startTime: Number(insertedStartTime.toFixed(2)),
+            duration: cueDur,
+            text: drivenAudio.text,
+            style: PLATFORM_META[prev.platform].defaultSubtitleStyle,
+            position: 'bottom' as const,
+          },
+        ].sort((a, b) => a.startTime - b.startTime);
+
+        nextAudio = {
+          ...prev.audio,
+          voiceoverEnabled: true,
+          bgmAutoDucking: true,
+        };
+      }
+
+      return {
+        ...prev,
+        clips: nextClips,
+        subtitles: nextSubtitles,
+        voiceoverCues: nextCues,
+        sfxEvents: nextSfx,
+        audio: nextAudio,
+      };
+    });
+
+    setSelectedClipId(newClipId);
+    setSelectedSubtitleId(null);
+    setCurrentTime(Number((insertedStartTime + 0.05).toFixed(2)));
+  };
+
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0B0D10] text-zinc-100">
       <TopBar
@@ -1136,6 +1568,16 @@ export default function App() {
                 setIsPlaying(false);
                 setCurrentTime(t);
               }}
+              assets={assets}
+              digitalHumans={digitalHumans}
+              onSaveDigitalHuman={handleSaveDigitalHuman}
+              onDeleteDigitalHuman={handleDeleteDigitalHuman}
+              onUploadMediaAssetForAnchor={handleUploadMediaAssetForAnchor}
+              onEmbedDigitalHumanPip={handleEmbedDigitalHumanPip}
+              onRemoveClipDigitalHuman={handleRemoveClipDigitalHuman}
+              onUpdateClipDigitalHumanAction={handleUpdateClipDigitalHumanAction}
+              onUpdateClipDigitalHumanEmotion={handleUpdateClipDigitalHumanEmotion}
+              onInsertDigitalHumanClip={handleInsertDigitalHumanClip}
             />
           </div>
 
