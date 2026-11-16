@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ClonedVoiceProfile } from '../types/studio';
+import { apiFetch } from '../client/api/http';
 
 interface VoiceCloneModalProps {
   onClose: () => void;
@@ -292,7 +293,7 @@ export function VoiceCloneModal({ onClose, onSaveProfile }: VoiceCloneModalProps
 
     try {
       const audioBase64 = await blobToBase64(recordedBlob);
-      const res = await fetch('/api/voice-clone/train', {
+      const res = await apiFetch('/api/voice-clone/train', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -343,7 +344,7 @@ export function VoiceCloneModal({ onClose, onSaveProfile }: VoiceCloneModalProps
     setAuditionError(null);
 
     try {
-      const res = await fetch('/api/voice-clone/preview', {
+      const res = await apiFetch('/api/voice-clone/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

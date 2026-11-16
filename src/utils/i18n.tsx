@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { ADMIN_TOKEN_HEADER, UI_LANG_HEADER } from '../contracts/http';
 import type { ContentLanguage, UiLanguage } from '../types/studio';
 
 export const UI_LANG_STORAGE_KEY = 'clipflow_ui_lang_v1';
@@ -35,14 +36,14 @@ export function getStoredContentLanguage(): ContentLanguage {
 
 export function buildApiHeaders(extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
-    'x-clipflow-lang': getStoredUiLanguage(),
+    [UI_LANG_HEADER]: getStoredUiLanguage(),
     ...extra,
   };
   if (typeof window !== 'undefined') {
     try {
       const token = window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim();
       if (token) {
-        headers['x-clipflow-token'] = token;
+        headers[ADMIN_TOKEN_HEADER] = token;
       }
     } catch {
       // ignore storage errors

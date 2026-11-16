@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Check, Film, Image as ImageIcon, Loader2, Plus, Scissors, Sparkles, Upload, Wand2, X } from 'lucide-react';
 import type { EditingStyle, MediaAsset, PlatformId } from '../types/studio';
+import { apiFetch } from '../client/api/http';
 
 interface BriefAndMediaPanelProps {
   brief: string;
@@ -95,7 +96,7 @@ export function BriefAndMediaPanel({
     setAppliedPolish(false);
 
     try {
-      const res = await fetch('/api/polish-brief', {
+      const res = await apiFetch('/api/polish-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

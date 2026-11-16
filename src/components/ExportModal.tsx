@@ -19,6 +19,8 @@ import type { AspectRatio, MediaAsset, PlatformId, PlatformProjectState } from '
 import { exportSrtSubtitles, formatTimecode, getTotalDuration, PLATFORM_META } from '../utils/autoEditEngine';
 import { StudioAudioEngine } from '../utils/audioEngine';
 import { findClipAtTime, renderTimelineFrame, type LoadedMediaElement } from '../utils/canvasRenderer';
+import { apiFetch } from '../client/api/http';
+import { advanceStudioCursor } from '../client/playback/studioClock';
 
 interface ExportModalProps {
   project: PlatformProjectState;
@@ -59,6 +61,19 @@ const PLATFORM_EXPORT_PROFILES: Record<PlatformId, PlatformExportProfile> = {
     encodingLabel: 'VP9 + Opus · 8.0 Mbps',
     optimizationNote: '针对抖音竖屏信息流与首帧清晰度优化，提高码率冗余以减少平台二压引起的字幕锯齿与暗部色块。',
   },
+  xiaohongshu: {
+    platform: 'xiaohongshu',
+    label: '小红书',
+    aspectRatio: '9:16',
+    resolutionTier: '1080p',
+    codec: 'vp9',
+    videoBitrateMbps: 7.0,
+    audioBitrateKbps: 192,
+    fps: 30,
+    badgeText: '1080×1920 · 质感',
+    encodingLabel: 'VP9 + Opus · 7.0 Mbps',
+    optimizationNote: '贴合小红书竖屏种草画幅，保留肤色和静物细节，减少平台压缩后的色块和字幕发虚。',
+  },
   tiktok: {
     platform: 'tiktok',
     label: 'TikTok',
@@ -71,6 +86,19 @@ const PLATFORM_EXPORT_PROFILES: Record<PlatformId, PlatformExportProfile> = {
     badgeText: '1080×1920 · 低延迟',
     encodingLabel: 'VP9 + Opus · 6.5 Mbps',
     optimizationNote: '贴合 TikTok 全球分发码率区间，兼顾高频卡点转场运动细节与海外端秒开缓冲速度。',
+  },
+  instagram: {
+    platform: 'instagram',
+    label: 'Instagram Reels',
+    aspectRatio: '9:16',
+    resolutionTier: '1080p',
+    codec: 'vp9',
+    videoBitrateMbps: 6.5,
+    audioBitrateKbps: 160,
+    fps: 30,
+    badgeText: '1080×1920 · Reels',
+    encodingLabel: 'VP9 + Opus · 6.5 Mbps',
+    optimizationNote: '按 Instagram Reels 竖屏分发，保留构图留白和字幕边缘，避免二次压缩后高光溢出。',
   },
   facebook: {
     platform: 'facebook',
@@ -476,14 +504,7 @@ export function ExportModal({
               const headers: Record<string, string> = {
                 'Content-Type': outType || 'video/webm',
               };
-              const adminToken =
-                typeof window !== 'undefined'
-                  ? window.localStorage.getItem('clipflow_admin_token')?.trim()
-                  : '';
-              if (adminToken) {
-                headers['x-clipflow-token'] = adminToken;
-              }
-              const resp = await fetch(
+              const resp = await apiFetch(
                 `/api/export/transcode-mp4?sourceExt=${outType.includes('mp4') ? 'mp4' : 'webm'}`,
                 {
                   method: 'POST',
@@ -532,12 +553,21 @@ export function ExportModal({
       recorder.start(200);
       audioEngine.start(0);
 
-      const startPerf = performance.now();
+      let cursorSec = 0;
+      let lastPerfMs = performance.now();
       let lastClipId: string | null = null;
 
-      const stepFrame = () => {
-        const elapsed = (performance.now() - startPerf) / 1000;
-        const clamped = Math.min(totalDuration, elapsed);
+      const stepFrame = (now: number) => {
+        const step = advanceStudioCursor({
+          cursorSec,
+          lastPerfMs,
+          nowMs: now,
+          durationSec: totalDuration,
+          loop: false,
+        });
+        cursorSec = step.cursorSec;
+        lastPerfMs = step.lastPerfMs;
+        const clamped = step.cursorSec;
 
         const activeInfo = findClipAtTime(project.clips, clamped);
         if (activeInfo) {
@@ -589,12 +619,10 @@ export function ExportModal({
 
         setProgress(Math.min(99, Math.round((clamped / totalDuration) * 100)));
 
-        if (elapsed < totalDuration) {
+        if (!step.reachedEnd) {
           rafRef.current = requestAnimationFrame(stepFrame);
-        } else {
-          if (recorder.state === 'recording') {
-            recorder.stop();
-          }
+        } else if (recorder.state === 'recording') {
+          recorder.stop();
         }
       };
 

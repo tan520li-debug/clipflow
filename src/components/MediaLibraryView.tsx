@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { MediaAiTags, MediaAsset, PlatformId } from '../types/studio';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../utils/canvasRenderer';
+import { apiFetch } from '../client/api/http';
 
 interface MediaLibraryViewProps {
   assets: MediaAsset[];
@@ -86,7 +87,7 @@ export function MediaLibraryView({
       throw new Error(`素材 "${asset.name}" 尚未加载完成，无法识别。`);
     }
 
-    const res = await fetch('/api/tag-media', {
+    const res = await apiFetch('/api/tag-media', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

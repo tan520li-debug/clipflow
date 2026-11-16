@@ -64,6 +64,12 @@ import {
   splitSpeechScriptIntoSegments,
 } from '../utils/digitalHumanAssets';
 import { renderDigitalHumanMiniStage } from '../utils/canvasRenderer';
+import { apiFetch } from '../client/api/http';
+import { blobToBase64 } from './digitalHuman/blobToBase64';
+import { CloneSection } from './digitalHuman/CloneSection';
+import { DriveSection } from './digitalHuman/DriveSection';
+import { EmotionActionSection } from './digitalHuman/EmotionActionSection';
+import { MultilingualSection } from './digitalHuman/MultilingualSection';
 
 export type DigitalHumanInsertTarget = 'before' | 'after' | 'start' | 'end';
 
@@ -146,98 +152,6 @@ interface DigitalHumanTabProps {
   brief?: string;
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      resolve(result.includes(',') ? result.split(',')[1] : result);
-    };
-    reader.onerror = () => reject(new Error('文件读取失败'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function captureVideoFrameBase64(videoUrl: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const vid = document.createElement('video');
-    vid.crossOrigin = 'anonymous';
-    vid.muted = true;
-    vid.playsInline = true;
-    const cleanup = () => {
-      vid.src = '';
-    };
-    vid.onloadeddata = () => {
-      try {
-        vid.currentTime = Math.min(0.4, (vid.duration || 2) * 0.2);
-      } catch {
-        // ignore seek
-      }
-    };
-    vid.onseeked = () => {
-      try {
-        const c = document.createElement('canvas');
-        c.width = 360;
-        c.height = 480;
-        const ctx = c.getContext('2d');
-        if (!ctx) {
-          cleanup();
-          resolve(null);
-          return;
-        }
-        const vw = vid.videoWidth || 360;
-        const vh = vid.videoHeight || 480;
-        const scale = Math.max(c.width / vw, c.height / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        ctx.drawImage(vid, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
-        const url = c.toDataURL('image/jpeg', 0.8);
-        cleanup();
-        resolve(url.includes(',') ? url.split(',')[1] : url);
-      } catch {
-        cleanup();
-        resolve(null);
-      }
-    };
-    vid.onerror = () => {
-      cleanup();
-      resolve(null);
-    };
-    vid.src = videoUrl;
-  });
-}
-
-async function imageUrlToBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        const c = document.createElement('canvas');
-        c.width = 360;
-        c.height = 480;
-        const ctx = c.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
-        }
-        const scale = Math.max(c.width / (img.naturalWidth || 360), c.height / (img.naturalHeight || 480));
-        const dw = (img.naturalWidth || 360) * scale;
-        const dh = (img.naturalHeight || 480) * scale;
-        ctx.drawImage(img, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
-        const dataUrl = c.toDataURL('image/jpeg', 0.82);
-        resolve({
-          base64: dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl,
-          mimeType: 'image/jpeg',
-        });
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
 
 export function DigitalHumanTab({
   selectedClip,
@@ -634,18 +548,6 @@ export function DigitalHumanTab({
     phonemeAlignment,
   ]);
 
-  const handleUploadAnchorMaterial = async (file: File) => {
-    setCloneMessage(null);
-    const created = await onUploadMediaAssetForAnchor(file);
-    if (created) {
-      setSelectedAssetForClone(created);
-      setUploadedPreviewUrl(created.url);
-      setUploadedMediaType(created.type);
-      if (!anchorName || anchorName === '我的虚拟主播') {
-        setAnchorName(file.name.replace(/\.[^.]+$/, '').slice(0, 16) || '我的虚拟主播');
-      }
-    }
-  };
 
   const handleToggleMicRecord = async () => {
     setVoiceRecordError(null);
@@ -774,127 +676,6 @@ export function DigitalHumanTab({
     }
   };
 
-  const handleCloneDigitalHuman = async () => {
-    setCloningAnchor(true);
-    setCloneMessage(null);
-
-    const boundClone = clonedVoices.find((v) => v.id === selectedVoiceBinding);
-    const chosenVoice: VoiceoverVoice = boundClone
-      ? boundClone.baseVoice
-      : (['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir'].includes(selectedVoiceBinding)
-          ? (selectedVoiceBinding as VoiceoverVoice)
-          : 'Kore');
-
-    let imageBase64: string | undefined;
-    let imageMimeType = 'image/jpeg';
-    if (uploadedMediaType === 'video') {
-      const frame = await captureVideoFrameBase64(uploadedPreviewUrl);
-      if (frame) imageBase64 = frame;
-    } else if (uploadedPreviewUrl && !uploadedPreviewUrl.startsWith('data:image/svg+xml')) {
-      const converted = await imageUrlToBase64(uploadedPreviewUrl);
-      if (converted) {
-        imageBase64 = converted.base64;
-        imageMimeType = converted.mimeType;
-      }
-    }
-
-    let aiPersonaSummary = `${styleHint || '短视频虚拟主播'}，形象自然清晰`;
-    let aiTags = ['专属分身', '实拍混剪', '口播驱动'];
-    let aiVoicePrompt =
-      boundClone?.voiceDesignPrompt ||
-      'Natural conversational short-video digital human presenter with warm breathing and clear diction.';
-    let aiBaseVoice: VoiceoverVoice = chosenVoice;
-    let aiAccent = '#fb7185';
-    let sampleAudioBase64 = recordedVoice?.base64;
-    let sampleAudioMimeType = recordedVoice?.mimeType;
-    let sampleAudioDurationSec = recordedVoice?.durationSec;
-
-    try {
-      const res = await fetch('/api/digital-human/clone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          anchorName: anchorName.trim() || '我的虚拟主播',
-          imageBase64,
-          imageMimeType,
-          audioBase64: recordedVoice?.base64,
-          audioMimeType: recordedVoice?.mimeType,
-          styleHint,
-          generateGreeting: !recordedVoice && !boundClone,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.personaSummary) aiPersonaSummary = data.personaSummary;
-        if (Array.isArray(data?.anchorStyleTags) && data.anchorStyleTags.length > 0) {
-          aiTags = data.anchorStyleTags;
-        }
-        if (data?.voiceDesignPrompt && !boundClone) aiVoicePrompt = data.voiceDesignPrompt;
-        if (data?.baseVoice && !boundClone) aiBaseVoice = data.baseVoice as VoiceoverVoice;
-        if (data?.accentColor) aiAccent = data.accentColor;
-        if (data?.sampleAudioBase64 && !sampleAudioBase64) {
-          sampleAudioBase64 = data.sampleAudioBase64;
-          sampleAudioMimeType = data.sampleAudioMimeType || 'audio/wav';
-          sampleAudioDurationSec = data.sampleAudioDurationSec;
-        }
-        if (data?.recommendedSampleLine && !scriptText.trim()) {
-          setScriptText(data.recommendedSampleLine);
-        }
-      }
-    } catch {
-      // Fallback cleanly to local profile creation using uploaded asset + recorded audio
-    }
-
-    const persistentAvatarUrl =
-      uploadedPreviewUrl.startsWith('blob:') && imageBase64
-        ? `data:${imageMimeType};base64,${imageBase64}`
-        : uploadedPreviewUrl.startsWith('blob:')
-          ? BUILTIN_DIGITAL_HUMAN_PRESETS[0].avatarUrl
-          : uploadedPreviewUrl;
-    const persistentAvatarType: 'image' | 'video' =
-      persistentAvatarUrl.startsWith('data:video/') ||
-      (uploadedMediaType === 'video' && !uploadedPreviewUrl.startsWith('blob:'))
-        ? uploadedMediaType
-        : 'image';
-
-    const newProfile: DigitalHumanProfile = {
-      id: `dh-${Date.now()}`,
-      name: anchorName.trim() || '我的虚拟主播',
-      createdAt: new Date().toISOString(),
-      avatarAssetId: selectedAssetForClone?.id,
-      avatarUrl: persistentAvatarUrl,
-      avatarMediaType: persistentAvatarType,
-      personaSummary: aiPersonaSummary,
-      anchorStyleTags: aiTags,
-      baseVoice: aiBaseVoice,
-      voiceDesignPrompt: aiVoicePrompt,
-      clonedVoiceId: boundClone?.id,
-      sampleAudioBase64,
-      sampleAudioMimeType,
-      sampleAudioDurationSec,
-      accentColor: aiAccent,
-      defaultAction: selectedAction,
-      defaultActionBlendDuration: actionBlendDuration,
-      defaultEmotion: selectedEmotion,
-      defaultFacialMuscles: facialMuscles,
-      defaultCameraMotion: cameraMotion,
-      defaultPhonemeAlignmentEnabled: phonemeAlignEnabled,
-      defaultPhonemeOffsetMs: phonemeOffsetMs,
-    };
-
-    onSaveDigitalHuman(newProfile);
-    setActiveAnchorId(newProfile.id);
-    if (sampleAudioBase64 && sampleAudioMimeType) {
-      setDrivenAudio({
-        audioBase64: sampleAudioBase64,
-        mimeType: sampleAudioMimeType,
-        durationSec: sampleAudioDurationSec ?? 3.2,
-        text: scriptText.trim() || newProfile.name,
-      });
-    }
-    setCloneMessage(`虚拟主播「${newProfile.name}」克隆完成！已在下方激活，可直接驱动并嵌入时间线。`);
-    setCloningAnchor(false);
-  };
 
   const playAudioSnippet = (b64: string, mime = 'audio/wav') => {
     if (previewAudioRef.current) {
@@ -953,188 +734,7 @@ export function DigitalHumanTab({
     }
   };
 
-  const handleSynthesizeAnchorSpeech = async () => {
-    if (!activeAnchor || !scriptText.trim()) return;
-    setDrivingSpeech(true);
-    setDriveError(null);
-    const boundClone = activeAnchor.clonedVoiceId
-      ? clonedVoices.find((v) => v.id === activeAnchor.clonedVoiceId)
-      : undefined;
 
-    try {
-      const res = await fetch('/api/digital-human/drive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          anchorName: activeAnchor.name,
-          scriptText: scriptText.trim(),
-          baseVoice: boundClone ? boundClone.baseVoice : activeAnchor.baseVoice,
-          voiceDesignPrompt: boundClone
-            ? boundClone.voiceDesignPrompt
-            : activeAnchor.voiceDesignPrompt,
-          expressiveness: boundClone?.expressiveness ?? 0.78,
-          platform,
-          phonemeAlignmentEnabled: phonemeAlignEnabled,
-          phonemeKeyframeOffsetMs: phonemeOffsetMs,
-          phonemeOnsetAdvanceMs: phonemeOnsetAdvanceMs,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.audioBase64) {
-        throw new Error(data?.error || '数字人语音驱动失败，请重试。');
-      }
-
-      const dur = Number(data.audioDurationSec || speechEstimate.durationSec || 3.2);
-      const mime = data.mimeType || 'audio/wav';
-      const segCount = Number(data.segmentCount || speechEstimate.segmentCount || 1);
-      setDrivenAudio({
-        audioBase64: data.audioBase64,
-        mimeType: mime,
-        durationSec: dur,
-        text: scriptText.trim(),
-        segmentCount: segCount,
-      });
-      setFullClipDuration(Number(Math.max(2, dur + 0.2).toFixed(1)));
-      if (data.phonemeAlignment) {
-        const aligned = data.phonemeAlignment as DigitalHumanPhonemeAlignmentProfile;
-        setPhonemeAlignment(aligned);
-        setPhonemeNotice(aligned.spectralSummary);
-        syncPhonemeAlignmentToSelectedClip(aligned);
-      } else if (phonemeAlignEnabled) {
-        void runClientPhonemeAnalysis(data.audioBase64, mime);
-      }
-      playAudioSnippet(data.audioBase64, mime);
-      if (emotionMatchEnabled) {
-        void handleAnalyzeVoiceEmotion(data.audioBase64, mime, scriptText.trim());
-      }
-    } catch (err: unknown) {
-      setDriveError(err instanceof Error ? err.message : '数字人语音驱动失败。');
-    } finally {
-      setDrivingSpeech(false);
-    }
-  };
-
-  const handleSynthesizeMultilingualDub = async (useEditedTranslation = false) => {
-    if (!activeAnchor) return;
-
-    let rawSource = scriptText.trim() || drivenAudio?.text || selectedClip?.digitalHuman?.spokenScript || '';
-    if (!rawSource && selectedClip) {
-      const end = selectedClipStartTime + selectedClip.duration;
-      const matched = subtitles
-        .filter((s) => {
-          const mid = s.startTime + s.duration / 2;
-          return mid >= selectedClipStartTime && mid <= end;
-        })
-        .map((s) => s.text.trim())
-        .filter(Boolean);
-      if (matched.length > 0) {
-        rawSource = matched.join('，');
-      }
-    }
-    if (!rawSource && subtitles[0]?.text) {
-      rawSource = subtitles[0].text.trim();
-    }
-
-    if (!rawSource && !(useEditedTranslation && editableTranslatedScript.trim())) {
-      setMultilingualError('请先输入或导入现有数字人语音脚本，再执行多语言翻译与声线克隆配音。');
-      return;
-    }
-
-    setSynthesizingMultilingual(true);
-    setMultilingualError(null);
-
-    const boundClone = activeAnchor.clonedVoiceId
-      ? clonedVoices.find((v) => v.id === activeAnchor.clonedVoiceId)
-      : undefined;
-    const referenceAudioBase64 =
-      recordedVoice?.base64 ?? activeAnchor.sampleAudioBase64 ?? boundClone?.samplePreviewBase64;
-    const referenceAudioMimeType =
-      recordedVoice?.mimeType ??
-      activeAnchor.sampleAudioMimeType ??
-      boundClone?.samplePreviewMimeType ??
-      'audio/wav';
-
-    try {
-      const res = await fetch('/api/digital-human/multilingual-dub', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          anchorName: activeAnchor.name,
-          sourceScript: rawSource,
-          preTranslatedScript: useEditedTranslation ? editableTranslatedScript.trim() : '',
-          targetLanguage,
-          baseVoice: boundClone ? boundClone.baseVoice : activeAnchor.baseVoice,
-          voiceDesignPrompt: boundClone
-            ? boundClone.voiceDesignPrompt
-            : activeAnchor.voiceDesignPrompt,
-          clonedVoice: boundClone ?? null,
-          referenceAudioBase64,
-          referenceAudioMimeType,
-          expressiveness: boundClone?.expressiveness ?? 0.78,
-          platform,
-          phonemeAlignmentEnabled: phonemeAlignEnabled,
-          phonemeKeyframeOffsetMs: phonemeOffsetMs,
-          phonemeOnsetAdvanceMs: phonemeOnsetAdvanceMs,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.audioBase64) {
-        throw new Error(data?.error || '多语言声线克隆配音合成失败，请重试。');
-      }
-
-      const alignedProfile =
-        (data.phonemeAlignment as DigitalHumanPhonemeAlignmentProfile | undefined) ?? undefined;
-
-      const result: DigitalHumanMultilingualResult = {
-        sourceScript: data.sourceScript || rawSource,
-        translatedScript: data.translatedScript || rawSource,
-        targetLanguage: (data.targetLanguage || targetLanguage) as DigitalHumanTargetLanguage,
-        targetLanguageLabel:
-          data.targetLanguageLabel || getDigitalHumanLanguageOption(targetLanguage).label,
-        voiceCloneSummary:
-          data.voiceCloneSummary || `已保留「${activeAnchor.name}」声线特征并合成目标语种配音。`,
-        baseVoice: (data.baseVoice || activeAnchor.baseVoice) as VoiceoverVoice,
-        clonedStylePrompt: data.clonedStylePrompt || '',
-        audioBase64: data.audioBase64,
-        mimeType: data.mimeType || 'audio/wav',
-        audioDurationSec: Number(data.audioDurationSec || 3.2),
-        modelUsed: data.modelUsed,
-        phonemeAlignment: alignedProfile,
-      };
-
-      setMultilingualEnabled(true);
-      setMultilingualResult(result);
-      setEditableTranslatedScript(result.translatedScript);
-      setDrivenAudio({
-        audioBase64: result.audioBase64,
-        mimeType: result.mimeType,
-        durationSec: result.audioDurationSec,
-        text: applyTranslatedToCaption ? result.translatedScript : result.sourceScript,
-      });
-      setFullClipDuration(Number(Math.max(2, result.audioDurationSec + 0.2).toFixed(1)));
-      if (alignedProfile) {
-        setPhonemeAlignment(alignedProfile);
-        setPhonemeNotice(alignedProfile.spectralSummary);
-        syncPhonemeAlignmentToSelectedClip(alignedProfile);
-      } else if (phonemeAlignEnabled) {
-        void runClientPhonemeAnalysis(result.audioBase64, result.mimeType);
-      }
-      playAudioSnippet(result.audioBase64, result.mimeType);
-      if (emotionMatchEnabled) {
-        void handleAnalyzeVoiceEmotion(
-          result.audioBase64,
-          result.mimeType,
-          result.translatedScript
-        );
-      }
-    } catch (err: unknown) {
-      setMultilingualError(
-        err instanceof Error ? err.message : '多语言语音合成失败，请稍后重试。'
-      );
-    } finally {
-      setSynthesizingMultilingual(false);
-    }
-  };
 
   const buildDigitalHumanClipConfig = (
     mode: 'pip-overlay' | 'full-scene'
@@ -1355,7 +955,7 @@ export function DigitalHumanTab({
     let finalResult: DigitalHumanEmotionAnalysis = localBaseline;
 
     try {
-      const res = await fetch('/api/digital-human/analyze-emotion', {
+      const res = await apiFetch('/api/digital-human/analyze-emotion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1399,160 +999,6 @@ export function DigitalHumanTab({
     setAnalyzingEmotion(false);
   };
 
-  const handleSelectEmotionPreset = (emotionId: DigitalHumanEmotionId) => {
-    const preset = getDigitalHumanEmotionPreset(emotionId);
-    setEmotionMatchEnabled(true);
-    setSelectedEmotion(emotionId);
-    setFacialMuscles(preset.muscles);
-    setEmotionNote(`已切换为「${preset.label}」情感基调，面部肌肉驱动参数已同步刷新。`);
-    syncEmotionToSelectedClip(true, emotionId, preset.muscles, preset.description);
-  };
-
-  const handleMuscleChange = (
-    key: keyof DigitalHumanFacialMuscles,
-    value: number
-  ) => {
-    const next = clampFacialMuscles({ ...facialMuscles, [key]: value });
-    setFacialMuscles(next);
-    if (emotionMatchEnabled) {
-      syncEmotionToSelectedClip(true, selectedEmotion, next, emotionAnalysis?.toneSummary);
-    }
-  };
-
-  const triggerMiniStageBlendPreview = (
-    fromAct: DigitalHumanActionId,
-    toAct: DigitalHumanActionId,
-    durationSec: number
-  ) => {
-    if (fromAct !== toAct && durationSec > 0.02) {
-      poseBlendRef.current = {
-        from: fromAct,
-        to: toAct,
-        startPerf: performance.now(),
-        durationSec,
-      };
-    } else {
-      poseBlendRef.current = null;
-    }
-  };
-
-  const handleSelectActionTemplate = (actionId: DigitalHumanActionId) => {
-    const tmpl = getDigitalHumanActionTemplate(actionId);
-    const prevAct = selectedAction;
-    if (prevAct !== actionId) {
-      setPreviousAction(prevAct);
-      triggerMiniStageBlendPreview(prevAct, actionId, actionBlendDuration);
-    }
-    setSelectedAction(actionId);
-    setActionIntensity(tmpl.recommendedIntensity);
-    const blendSource = prevTimelineAction ?? (prevAct !== actionId ? prevAct : previousAction ?? undefined);
-    if (selectedClip?.digitalHuman) {
-      onUpdateClipDigitalHumanAction(selectedClip.id, actionId, tmpl.recommendedIntensity, {
-        actionBlendDuration,
-        blendFromAction: blendSource,
-      });
-      if (prevAct !== actionId && actionBlendDuration > 0.02) {
-        const fromTmpl = getDigitalHumanActionTemplate(prevAct);
-        setActionSyncNotice(
-          `已为片段「${selectedClip.label}」分配「${tmpl.label}」姿态，并开启 ${actionBlendDuration.toFixed(2)}s 自动动作插值（${fromTmpl.label} → ${tmpl.label}）。`
-        );
-      } else {
-        setActionSyncNotice(`已为当前片段「${selectedClip.label}」分配「${tmpl.label}」姿态，播放与导出将自动调用对应动作驱动。`);
-      }
-    } else {
-      setActionSyncNotice(`已选定「${tmpl.label}」动作模板，嵌入或插入视频轨时将自动绑定该姿态与动作混合过渡。`);
-    }
-  };
-
-  const handleAnalyzeScriptActions = async () => {
-    setAnalyzingActionSuggestion(true);
-    setActionSuggestNote(null);
-
-    let cursor = 0;
-    const serializedClips = clips.map((c, idx) => {
-      const start = cursor;
-      const end = cursor + c.duration;
-      cursor = end;
-      const matchedSubs = subtitles
-        .filter((s) => {
-          const mid = s.startTime + s.duration / 2;
-          return mid >= start && mid <= end;
-        })
-        .map((s) => s.text.trim())
-        .filter(Boolean)
-        .join(' ');
-      return {
-        id: c.id,
-        index: idx,
-        label: c.label,
-        duration: c.duration,
-        hookTag: c.hookTag,
-        subtitleText: matchedSubs,
-      };
-    });
-
-    try {
-      const res = await fetch('/api/digital-human/suggest-actions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          brief,
-          scriptText: scriptText.trim(),
-          platform,
-          selectedClipId: selectedClip?.id ?? '',
-          clips: serializedClips,
-          subtitles: subtitles.map((s) => ({ startTime: s.startTime, text: s.text })),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'AI 脚本动作分析失败');
-      }
-      setAiActionSuggestion(data as DigitalHumanActionRecommendation);
-      const recTmpl = getDigitalHumanActionTemplate(
-        data.primaryAction as DigitalHumanActionId
-      );
-      setActionSuggestNote(
-        `AI 已结合剧本语境高亮推荐「${recTmpl.label}」（${data.contextStage || '语境匹配'}）。`
-      );
-    } catch (err: unknown) {
-      setActionSuggestNote(
-        err instanceof Error
-          ? err.message
-          : '已启用本地脚本语境实时分析并高亮推荐动作。'
-      );
-    } finally {
-      setAnalyzingActionSuggestion(false);
-    }
-  };
-
-  const handleBatchApplyRecommendedActions = () => {
-    if (!onBatchApplyDigitalHumanActions) return;
-    const updates = activeActionRecommendation.clipSuggestions.map((s) => ({
-      clipId: s.clipId,
-      action: s.recommendedAction,
-      actionIntensity: s.recommendedIntensity,
-      actionBlendDuration,
-    }));
-    onBatchApplyDigitalHumanActions(updates);
-    if (selectedClip) {
-      const matched = updates.find((u) => u.clipId === selectedClip.id);
-      if (matched) {
-        if (selectedAction !== matched.action) {
-          setPreviousAction(selectedAction);
-          triggerMiniStageBlendPreview(selectedAction, matched.action, actionBlendDuration);
-        }
-        setSelectedAction(matched.action);
-        if (typeof matched.actionIntensity === 'number') {
-          setActionIntensity(matched.actionIntensity);
-        }
-      }
-    }
-    const dhCount = clips.filter((c) => Boolean(c.digitalHuman)).length;
-    setActionSyncNotice(
-      `已根据脚本分镜语境，一键为时间线上 ${dhCount} 个数字人镜头匹配对应动作姿态及 ${actionBlendDuration.toFixed(2)}s 平滑过渡！`
-    );
-  };
 
   const resolvedAudioPayload =
     syncDrivenVoiceOnEmbed && drivenAudio
@@ -1602,23 +1048,6 @@ export function DigitalHumanTab({
     );
   };
 
-  // Helper to import subtitle text from current clip range
-  const handleFillSubtitlesFromClip = () => {
-    if (!selectedClip) return;
-    const end = selectedClipStartTime + selectedClip.duration;
-    const matched = subtitles
-      .filter((s) => {
-        const mid = s.startTime + s.duration / 2;
-        return mid >= selectedClipStartTime && mid <= end;
-      })
-      .map((s) => s.text.trim())
-      .filter(Boolean);
-    if (matched.length > 0) {
-      setScriptText(matched.join('，'));
-    } else if (subtitles[0]?.text) {
-      setScriptText(subtitles[0].text);
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -1638,249 +1067,48 @@ export function DigitalHumanTab({
         </p>
       </div>
 
-      {/* 1. Digital Human Clone Creator */}
-      <div className="rounded-lg border border-violet-500/35 bg-[#0B0D10] p-3 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-violet-200 flex items-center gap-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-violet-400 shrink-0" />
-            <span>1. 数字人形象与语音克隆</span>
-          </span>
-          <span className="text-[10px] text-zinc-500">图/视频 + 语音</span>
-        </div>
-
-        <div>
-          <label htmlFor="dh-anchor-name" className="block text-[11px] text-zinc-400 mb-1">
-            虚拟主播名称
-          </label>
-          <input
-            id="dh-anchor-name"
-            type="text"
-            maxLength={20}
-            value={anchorName}
-            onChange={(e) => setAnchorName(e.target.value)}
-            placeholder="例如：小陈口播分身"
-            className="w-full rounded-md bg-[#11141B] border border-zinc-800 px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
-          />
-        </div>
-
-        {/* Upload Avatar Photo / Video or Pick Preset */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-zinc-400">
-            <span>主播形象素材</span>
-            <button
-              type="button"
-              onClick={() => anchorMediaInputRef.current?.click()}
-              className="text-violet-300 hover:text-violet-200 font-medium flex items-center gap-1"
-            >
-              <Upload className="w-3 h-3" />
-              <span>上传人像照片/视频</span>
-            </button>
-          </div>
-
-          <input
-            ref={anchorMediaInputRef}
-            type="file"
-            accept="image/*,video/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleUploadAnchorMaterial(f);
-              e.target.value = '';
-            }}
-          />
-
-          <div className="flex items-center gap-2.5">
-            <div className="w-12 h-14 rounded-lg border border-zinc-700 bg-[#11141B] overflow-hidden shrink-0 flex items-center justify-center">
-              {uploadedMediaType === 'video' ? (
-                <video
-                  src={uploadedPreviewUrl}
-                  muted
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <img
-                  src={uploadedPreviewUrl}
-                  alt="数字人形象预览"
-                  className="w-full h-full object-cover"
-                />
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0 space-y-1.5">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-                {BUILTIN_DIGITAL_HUMAN_PRESETS.map((preset) => {
-                  const selected = uploadedPreviewUrl === preset.avatarUrl;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      title={preset.name}
-                      onClick={() => {
-                        setSelectedAssetForClone(null);
-                        setUploadedPreviewUrl(preset.avatarUrl);
-                        setUploadedMediaType('image');
-                        setAnchorName(preset.name.split(' · ')[0]);
-                        setSelectedVoiceBinding(preset.baseVoice);
-                      }}
-                      className={`w-8 h-8 rounded-md overflow-hidden border shrink-0 transition-colors ${
-                        selected
-                          ? 'border-violet-400 ring-1 ring-violet-400/50'
-                          : 'border-zinc-700 opacity-75 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={preset.avatarUrl} alt={preset.name} className="w-full h-full object-cover" />
-                    </button>
-                  );
-                })}
-                {assets.slice(0, 3).map((asset) => {
-                  const selected = selectedAssetForClone?.id === asset.id;
-                  return (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      title={`使用素材：${asset.name}`}
-                      onClick={() => {
-                        setSelectedAssetForClone(asset);
-                        setUploadedPreviewUrl(asset.url);
-                        setUploadedMediaType(asset.type);
-                      }}
-                      className={`px-1.5 h-8 rounded-md border text-[10px] shrink-0 flex items-center gap-1 transition-colors ${
-                        selected
-                          ? 'border-violet-400 bg-violet-500/20 text-violet-100'
-                          : 'border-zinc-700 bg-[#11141B] text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      <ImagePlus className="w-3 h-3 shrink-0" />
-                      <span className="max-w-[52px] truncate">{asset.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                type="text"
-                value={styleHint}
-                onChange={(e) => setStyleHint(e.target.value)}
-                placeholder="人设补充：如科技干货主播 / 种草达人"
-                className="w-full rounded bg-[#11141B] border border-zinc-800 px-2 py-1 text-[10px] text-zinc-300 focus:outline-none focus:border-violet-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Voice Recording / Audio Upload / Voice Binding */}
-        <div className="space-y-2 border-t border-zinc-800/80 pt-2.5">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-zinc-400">声音来源（录制或绑定音色）</span>
-            {recordedVoice && (
-              <span className="font-mono-nums text-emerald-300">
-                已录 {recordedVoice.durationSec.toFixed(1)}s
-              </span>
-            )}
-          </div>
-
-          <input
-            ref={voiceAudioInputRef}
-            type="file"
-            accept="audio/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleUploadDriveAudioFile(f);
-              e.target.value = '';
-            }}
-          />
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => void handleToggleMicRecord()}
-              className={`flex-1 py-1.5 px-2.5 rounded-md text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors ${
-                isRecordingVoice
-                  ? 'bg-red-600 hover:bg-red-500 text-white'
-                  : 'bg-[#11141B] border border-zinc-700 hover:border-violet-500/70 text-zinc-200'
-              }`}
-            >
-              {isRecordingVoice ? (
-                <>
-                  <Square className="w-3 h-3 fill-current" />
-                  <span className="font-mono-nums">
-                    停止录音 {recordElapsedSec.toFixed(1)}s
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Mic className="w-3 h-3 text-rose-400" />
-                  <span>{recordedVoice ? '重录主播语音' : '录制个人语音'}</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => voiceAudioInputRef.current?.click()}
-              className="py-1.5 px-2.5 rounded-md border border-zinc-700 bg-[#11141B] hover:bg-zinc-800 text-[11px] text-zinc-300 flex items-center gap-1 shrink-0"
-              title="上传本地音频文件"
-            >
-              <Upload className="w-3 h-3" />
-              <span>上传音频</span>
-            </button>
-          </div>
-
-          <select
-            value={selectedVoiceBinding}
-            onChange={(e) => setSelectedVoiceBinding(e.target.value)}
-            aria-label="绑定基底音色或克隆声纹"
-            className="w-full rounded-md bg-[#11141B] border border-zinc-800 px-2.5 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-violet-500"
-          >
-            {clonedVoices.length > 0 && (
-              <optgroup label="已训练专属克隆音色">
-                {clonedVoices.map((cv) => (
-                  <option key={cv.id} value={cv.id}>
-                    ★ {cv.name} ({cv.baseVoice})
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            <optgroup label="AI 预设演播室声线">
-              <option value="Kore">Kore · 温暖自然女主播</option>
-              <option value="Zephyr">Zephyr · 轻快青年口播</option>
-              <option value="Puck">Puck · 元气种草达人</option>
-              <option value="Charon">Charon · 沉稳科技男声</option>
-              <option value="Fenrir">Fenrir · 低沉磁性解说</option>
-            </optgroup>
-          </select>
-
-          {voiceRecordError && (
-            <p className="text-[10px] text-red-300 leading-snug">{voiceRecordError}</p>
-          )}
-        </div>
-
-        <button
-          type="button"
-          disabled={cloningAnchor}
-          onClick={() => void handleCloneDigitalHuman()}
-          className="w-full py-2 px-3 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors"
-        >
-          {cloningAnchor ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>正在分析形象与声纹建模...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>克隆生成虚拟主播分身</span>
-            </>
-          )}
-        </button>
-
-        {cloneMessage && (
-          <div className="rounded-md border border-emerald-500/35 bg-emerald-950/25 px-2.5 py-2 text-[11px] text-emerald-200 leading-snug">
-            {cloneMessage}
-          </div>
-        )}
-      </div>
+      <CloneSection
+        anchorName={anchorName}
+        setAnchorName={setAnchorName}
+        styleHint={styleHint}
+        setStyleHint={setStyleHint}
+        selectedAssetForClone={selectedAssetForClone}
+        setSelectedAssetForClone={setSelectedAssetForClone}
+        uploadedPreviewUrl={uploadedPreviewUrl}
+        setUploadedPreviewUrl={setUploadedPreviewUrl}
+        uploadedMediaType={uploadedMediaType}
+        setUploadedMediaType={setUploadedMediaType}
+        selectedVoiceBinding={selectedVoiceBinding}
+        setSelectedVoiceBinding={setSelectedVoiceBinding}
+        cloningAnchor={cloningAnchor}
+        setCloningAnchor={setCloningAnchor}
+        cloneMessage={cloneMessage}
+        setCloneMessage={setCloneMessage}
+        recordedVoice={recordedVoice}
+        isRecordingVoice={isRecordingVoice}
+        recordElapsedSec={recordElapsedSec}
+        voiceRecordError={voiceRecordError}
+        anchorMediaInputRef={anchorMediaInputRef}
+        voiceAudioInputRef={voiceAudioInputRef}
+        handleToggleMicRecord={handleToggleMicRecord}
+        handleUploadDriveAudioFile={handleUploadDriveAudioFile}
+        assets={assets}
+        clonedVoices={clonedVoices}
+        activeVoiceoverVoice={activeVoiceoverVoice}
+        onUploadMediaAssetForAnchor={onUploadMediaAssetForAnchor}
+        scriptText={scriptText}
+        setScriptText={setScriptText}
+        selectedAction={selectedAction}
+        actionBlendDuration={actionBlendDuration}
+        selectedEmotion={selectedEmotion}
+        facialMuscles={facialMuscles}
+        cameraMotion={cameraMotion}
+        phonemeAlignEnabled={phonemeAlignEnabled}
+        phonemeOffsetMs={phonemeOffsetMs}
+        onSaveDigitalHuman={onSaveDigitalHuman}
+        setActiveAnchorId={setActiveAnchorId}
+        setDrivenAudio={setDrivenAudio}
+      />
 
       {/* 2. Digital Human Roster + Speech Driving */}
       <div className="rounded-lg border border-zinc-800/90 bg-[#0B0D10] p-3 space-y-3">
@@ -1989,588 +1217,48 @@ export function DigitalHumanTab({
           </div>
         )}
 
-        {/* Digital Human Action Template Library + Auto Action Suggestion */}
-        <div className="rounded-lg border border-zinc-800 bg-[#11141B] p-2.5 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold text-zinc-200 flex items-center gap-1.5">
-                <span>数字人动作模板库</span>
-                {autoActionSuggestEnabled && (
-                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-400/50 text-[9px] font-semibold text-amber-200">
-                    自动推荐高亮
-                  </span>
-                )}
-              </span>
-              <span className="block text-[10px] font-medium text-cyan-300 mt-0.5">
-                当前姿态：{getDigitalHumanActionTemplate(selectedAction).label}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                disabled={analyzingActionSuggestion}
-                onClick={() => void handleAnalyzeScriptActions()}
-                className="px-2 py-1 rounded border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-[10px] font-semibold text-amber-200 flex items-center gap-1 transition-colors"
-                title="调用 AI 深度分析视频脚本并自动高亮推荐动作"
-              >
-                {analyzingActionSuggestion ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Wand2 className="w-3 h-3" />
-                )}
-                <span>{analyzingActionSuggestion ? '分析中' : 'AI 分析脚本'}</span>
-              </button>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={autoActionSuggestEnabled}
-                aria-label="自动动作建议"
-                onClick={() => setAutoActionSuggestEnabled((v) => !v)}
-                className={`relative inline-flex h-4.5 w-8 shrink-0 items-center rounded-full border transition-colors ${
-                  autoActionSuggestEnabled
-                    ? 'bg-amber-500 border-amber-400'
-                    : 'bg-zinc-800 border-zinc-700'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${
-                    autoActionSuggestEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          {/* Context-aware Auto Action Recommendation Banner */}
-          {autoActionSuggestEnabled && (() => {
-            const primaryTmpl = getDigitalHumanActionTemplate(
-              activeActionRecommendation.primaryAction
-            );
-            const isAdopted = selectedAction === activeActionRecommendation.primaryAction;
-            const dhClipsCount = clips.filter((c) => Boolean(c.digitalHuman)).length;
-
-            return (
-              <div className="rounded-md border border-amber-400/50 bg-amber-500/10 p-2 space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                    <span className="text-[10px] font-semibold text-amber-100 truncate">
-                      语境【{activeActionRecommendation.contextStage}】→ 推荐「{primaryTmpl.label}」
-                    </span>
-                  </div>
-                  {isAdopted ? (
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-semibold text-emerald-200 shrink-0">
-                      已采纳推荐
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSelectActionTemplate(activeActionRecommendation.primaryAction)
-                      }
-                      className="px-2 py-0.5 rounded bg-amber-400 hover:bg-amber-300 text-zinc-950 text-[10px] font-bold shrink-0 transition-colors"
-                    >
-                      采纳「{primaryTmpl.label}」
-                    </button>
-                  )}
-                </div>
-
-                <p className="text-[10px] text-amber-100/85 leading-snug">
-                  {activeActionRecommendation.reason}
-                </p>
-
-                {actionSuggestNote && (
-                  <p className="text-[9px] text-amber-300/90 leading-snug">
-                    {actionSuggestNote}
-                  </p>
-                )}
-
-                {activeActionRecommendation.clipSuggestions.length > 0 && (
-                  <div className="pt-1 border-t border-amber-400/20 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[9px] text-amber-200/80">
-                        分镜脚本语境动作映射（点击高亮应用）：
-                      </span>
-                      {dhClipsCount > 0 && onBatchApplyDigitalHumanActions && (
-                        <button
-                          type="button"
-                          onClick={handleBatchApplyRecommendedActions}
-                          className="text-[9px] font-semibold text-amber-300 hover:text-amber-100 underline underline-offset-2 shrink-0"
-                        >
-                          一键同步全部数字人镜头
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {activeActionRecommendation.clipSuggestions.map((cs, idx) => {
-                        const actTmpl = getDigitalHumanActionTemplate(cs.recommendedAction);
-                        const isCurClip = selectedClip?.id === cs.clipId;
-                        return (
-                          <button
-                            key={cs.clipId}
-                            type="button"
-                            onClick={() => handleSelectActionTemplate(cs.recommendedAction)}
-                            title={`${cs.clipLabel}（${cs.contextStage}）：${cs.reason}`}
-                            className={`px-1.5 py-0.5 rounded border text-[9px] flex items-center gap-1 transition-colors ${
-                              isCurClip
-                                ? 'border-amber-300 bg-amber-400/25 text-amber-100 font-semibold'
-                                : 'border-zinc-700/80 bg-[#0B0D10]/80 text-zinc-300 hover:border-amber-400/60'
-                            }`}
-                          >
-                            <span className="truncate max-w-[64px]">
-                              {idx + 1}.{cs.clipLabel}
-                            </span>
-                            <span className="text-amber-300 font-semibold">
-                              · {actTmpl.label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          <div
-            className="grid grid-cols-3 gap-1.5"
-            role="radiogroup"
-            aria-label="数字人动作模板库"
-          >
-            {DIGITAL_HUMAN_ACTION_TEMPLATES.map((tmpl) => {
-              const isSelected = selectedAction === tmpl.id;
-              const isPrimaryRec =
-                autoActionSuggestEnabled &&
-                activeActionRecommendation.primaryAction === tmpl.id;
-              const isSecondaryRec =
-                autoActionSuggestEnabled &&
-                !isPrimaryRec &&
-                activeActionRecommendation.secondaryAction === tmpl.id;
-
-              return (
-                <button
-                  key={tmpl.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={isSelected}
-                  onClick={() => handleSelectActionTemplate(tmpl.id)}
-                  title={
-                    isPrimaryRec
-                      ? `AI 脚本语境主推：${activeActionRecommendation.reason}`
-                      : tmpl.summary
-                  }
-                  className={`group rounded-lg border p-1 text-left transition-all flex flex-col gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
-                    isSelected && isPrimaryRec
-                      ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-amber-400/75 shadow-[0_0_14px_rgba(251,191,36,0.3)]'
-                      : isSelected
-                        ? 'border-cyan-400 bg-cyan-950/35 ring-1 ring-cyan-400/35'
-                        : isPrimaryRec
-                          ? 'border-amber-400 bg-amber-500/15 ring-2 ring-amber-400/55 shadow-[0_0_14px_rgba(251,191,36,0.28)]'
-                          : isSecondaryRec
-                            ? 'border-amber-500/45 bg-amber-950/15 hover:border-amber-400/80'
-                            : 'border-zinc-800 bg-[#0B0D10] hover:border-zinc-600'
-                  }`}
-                >
-                  <div className="relative w-full h-11 rounded overflow-hidden bg-zinc-900">
-                    <img
-                      src={tmpl.thumbnailUrl}
-                      alt={`${tmpl.label}动作缩略图`}
-                      className="w-full h-full object-cover"
-                    />
-                    {isPrimaryRec && (
-                      <span className="absolute top-0.5 left-0.5 px-1 py-0.2 rounded bg-amber-400 text-[8px] font-bold text-zinc-950 shadow">
-                        推荐
-                      </span>
-                    )}
-                    {isSecondaryRec && (
-                      <span className="absolute top-0.5 left-0.5 px-1 py-0.2 rounded bg-amber-950/90 border border-amber-400/50 text-[8px] font-semibold text-amber-200">
-                        备选
-                      </span>
-                    )}
-                    <span
-                      className="absolute top-0.5 right-0.5 px-1 py-0.2 rounded text-[8px] font-mono-nums font-bold text-zinc-950"
-                      style={{ backgroundColor: tmpl.badgeColor }}
-                    >
-                      {tmpl.englishTag}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between px-0.5">
-                    <span
-                      className={`text-[11px] font-semibold ${
-                        isSelected
-                          ? 'text-cyan-100'
-                          : isPrimaryRec
-                            ? 'text-amber-200'
-                            : 'text-zinc-300'
-                      }`}
-                    >
-                      {tmpl.label}
-                    </span>
-                    {isSelected ? (
-                      <Check className="w-3 h-3 text-cyan-300 shrink-0" />
-                    ) : isPrimaryRec ? (
-                      <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <p className="text-[10px] text-zinc-400 leading-snug">
-            {getDigitalHumanActionTemplate(selectedAction).summary}
-          </p>
-
-          <div className="pt-1 border-t border-zinc-800/80 space-y-2.5">
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-zinc-400 mb-1">
-                <span>动作姿态幅度</span>
-                <span className="font-mono-nums text-cyan-300">{actionIntensity.toFixed(2)}x</span>
-              </div>
-              <input
-                type="range"
-                min={0.6}
-                max={1.4}
-                step={0.05}
-                value={actionIntensity}
-                onChange={(e) => {
-                  const nextVal = Number(e.target.value);
-                  setActionIntensity(nextVal);
-                  if (selectedClip?.digitalHuman) {
-                    onUpdateClipDigitalHumanAction(selectedClip.id, selectedAction, nextVal, {
-                      actionBlendDuration,
-                    });
-                  }
-                }}
-                className="w-full accent-cyan-400"
-              />
-            </div>
-
-            {/* Motion Blending Slider */}
-            <div className="pt-1.5 border-t border-zinc-800/70 space-y-1">
-              <div className="flex items-center justify-between text-[10px]">
-                <label htmlFor="dh-motion-blend-slider" className="text-zinc-300 font-medium">
-                  动作混合 (Motion Blending)
-                </label>
-                <span className="font-mono-nums text-cyan-300">
-                  {actionBlendDuration <= 0.02
-                    ? '关闭 (硬切)'
-                    : `${actionBlendDuration.toFixed(2)}s 自动插值`}
-                </span>
-              </div>
-              <input
-                id="dh-motion-blend-slider"
-                type="range"
-                min={0}
-                max={1.5}
-                step={0.05}
-                value={actionBlendDuration}
-                onChange={(e) => {
-                  const nextBlend = Number(e.target.value);
-                  setActionBlendDuration(nextBlend);
-                  if (selectedClip?.digitalHuman) {
-                    onUpdateClipDigitalHumanAction(
-                      selectedClip.id,
-                      selectedAction,
-                      actionIntensity,
-                      {
-                        actionBlendDuration: nextBlend,
-                        blendFromAction:
-                          prevTimelineAction ??
-                          (previousAction && previousAction !== selectedAction
-                            ? previousAction
-                            : undefined),
-                      }
-                    );
-                  }
-                }}
-                className="w-full accent-cyan-400"
-              />
-              {(() => {
-                const rawPrev =
-                  prevTimelineAction && prevTimelineAction !== selectedAction
-                    ? prevTimelineAction
-                    : previousAction && previousAction !== selectedAction
-                      ? previousAction
-                      : null;
-                const demoFrom: DigitalHumanActionId =
-                  rawPrev ?? (selectedAction === 'wave' ? 'point' : selectedAction === 'point' ? 'wave' : 'point');
-                const demoTo: DigitalHumanActionId =
-                  rawPrev ? selectedAction : selectedAction === 'point' ? 'wave' : selectedAction;
-                return (
-                  <div className="flex items-center justify-between gap-2 text-[9px] text-zinc-400">
-                    <span className="truncate">
-                      {rawPrev
-                        ? `过渡：${getDigitalHumanActionTemplate(rawPrev).label} → ${getDigitalHumanActionTemplate(selectedAction).label}`
-                        : '连续动作切换时自动平滑插值（如 指引 → 挥手）'}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={actionBlendDuration <= 0.02}
-                      onClick={() => {
-                        if (demoTo !== selectedAction) {
-                          setSelectedAction(demoTo);
-                        }
-                        setPreviousAction(demoFrom);
-                        triggerMiniStageBlendPreview(demoFrom, demoTo, actionBlendDuration);
-                      }}
-                      className="px-1.5 py-0.5 rounded border border-cyan-500/45 bg-cyan-950/35 hover:bg-cyan-900/45 disabled:opacity-40 text-[9px] font-semibold text-cyan-200 shrink-0 transition-colors"
-                    >
-                      预览过渡
-                    </button>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
-          {actionSyncNotice && (
-            <div className="rounded border border-cyan-500/35 bg-cyan-950/25 px-2 py-1.5 text-[10px] text-cyan-200 leading-snug">
-              {actionSyncNotice}
-            </div>
-          )}
-        </div>
-
-        {/* Voice Emotion Matching & Facial Muscle Tuning */}
-        <div className="rounded-lg border border-amber-500/30 bg-[#11141B] p-2.5 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold text-amber-200 flex items-center gap-1.5">
-                <AudioLines className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>语音情感匹配（面部肌肉驱动）</span>
-              </span>
-              <span className="block text-[10px] text-zinc-400 mt-0.5">
-                分析语调自动调整张口、眉弓、眼神与唇肌张力
-              </span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={emotionMatchEnabled}
-              aria-label="语音情感匹配"
-              onClick={() => {
-                const next = !emotionMatchEnabled;
-                setEmotionMatchEnabled(next);
-                syncEmotionToSelectedClip(
-                  next,
-                  selectedEmotion,
-                  facialMuscles,
-                  emotionAnalysis?.toneSummary
-                );
-              }}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
-                emotionMatchEnabled
-                  ? 'bg-amber-500 border-amber-400'
-                  : 'bg-zinc-800 border-zinc-700'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  emotionMatchEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </div>
-
-          {emotionMatchEnabled && (
-            <div className="space-y-2.5 pt-1 border-t border-zinc-800/80">
-              <button
-                type="button"
-                disabled={analyzingEmotion}
-                onClick={() => void handleAnalyzeVoiceEmotion()}
-                className="w-full py-1.5 px-2.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 disabled:opacity-50 text-[11px] font-semibold text-amber-100 flex items-center justify-center gap-1.5 transition-colors"
-              >
-                {analyzingEmotion ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>正在分析音频语调与情感基调...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>分析音频语调并自动匹配面部肌肉</span>
-                  </>
-                )}
-              </button>
-
-              {/* Emotion Baselines */}
-              <div className="grid grid-cols-5 gap-1">
-                {DIGITAL_HUMAN_EMOTION_PRESETS.map((preset) => {
-                  const active = selectedEmotion === preset.id;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => handleSelectEmotionPreset(preset.id)}
-                      title={preset.description}
-                      className={`py-1 px-1 rounded border text-[10px] font-semibold text-center transition-colors ${
-                        active
-                          ? 'text-zinc-950 border-transparent'
-                          : 'bg-[#0B0D10] border-zinc-800 text-zinc-300 hover:border-zinc-600'
-                      }`}
-                      style={
-                        active
-                          ? { backgroundColor: preset.badgeColor }
-                          : undefined
-                      }
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {emotionAnalysis && (
-                <div className="rounded border border-amber-500/35 bg-amber-950/20 p-2 space-y-1">
-                  <div className="flex items-center justify-between gap-2 text-[10px]">
-                    <span className="font-semibold text-amber-200">
-                      识别情感：{emotionAnalysis.emotionLabel}
-                    </span>
-                    <span className="font-mono-nums text-amber-300">
-                      匹配度 {Math.round(emotionAnalysis.confidence * 100)}%
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-zinc-300 leading-snug">
-                    {emotionAnalysis.toneSummary}
-                  </p>
-                  {emotionAnalysis.prosodyMetrics && (
-                    <div className="grid grid-cols-3 gap-1 pt-1 text-[9px] font-mono-nums text-zinc-400">
-                      <span>能量 {(emotionAnalysis.prosodyMetrics.energyRms * 100).toFixed(0)}%</span>
-                      <span>音高波动 {emotionAnalysis.prosodyMetrics.pitchVariance.toFixed(2)}</span>
-                      <span>节奏 {emotionAnalysis.prosodyMetrics.tempoBurstRate.toFixed(1)}/s</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {emotionNote && !emotionAnalysis && (
-                <div className="rounded border border-zinc-700 bg-[#0B0D10] px-2 py-1 text-[10px] text-zinc-300">
-                  {emotionNote}
-                </div>
-              )}
-
-              {/* Facial Muscle Drive Fine-tuning Sliders */}
-              <div className="space-y-1.5 pt-1 border-t border-zinc-800/70">
-                <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                  <span className="flex items-center gap-1">
-                    <Sliders className="w-3 h-3 text-amber-400" />
-                    <span>面部肌肉驱动微调参数</span>
-                  </span>
-                  <span className="font-mono-nums text-amber-300">
-                    {getDigitalHumanEmotionPreset(selectedEmotion).englishTag}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-x-2.5 gap-y-1.5">
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-400">
-                      <span>张口幅度</span>
-                      <span className="font-mono-nums text-zinc-200">
-                        {facialMuscles.jawOpenness.toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0.5}
-                      max={1.6}
-                      step={0.02}
-                      value={facialMuscles.jawOpenness}
-                      onChange={(e) => handleMuscleChange('jawOpenness', Number(e.target.value))}
-                      className="w-full accent-amber-400"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-400">
-                      <span>眉弓张力</span>
-                      <span className="font-mono-nums text-zinc-200">
-                        {facialMuscles.browLift >= 0 ? `+${facialMuscles.browLift.toFixed(2)}` : facialMuscles.browLift.toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-1.0}
-                      max={1.0}
-                      step={0.05}
-                      value={facialMuscles.browLift}
-                      onChange={(e) => handleMuscleChange('browLift', Number(e.target.value))}
-                      className="w-full accent-amber-400"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-400">
-                      <span>眼神聚焦</span>
-                      <span className="font-mono-nums text-zinc-200">
-                        {facialMuscles.eyeSquint.toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.04}
-                      value={facialMuscles.eyeSquint}
-                      onChange={(e) => handleMuscleChange('eyeSquint', Number(e.target.value))}
-                      className="w-full accent-amber-400"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-400">
-                      <span>嘴角微笑</span>
-                      <span className="font-mono-nums text-zinc-200">
-                        {facialMuscles.smileCurve >= 0 ? `+${facialMuscles.smileCurve.toFixed(2)}` : facialMuscles.smileCurve.toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-0.6}
-                      max={1.0}
-                      step={0.05}
-                      value={facialMuscles.smileCurve}
-                      onChange={(e) => handleMuscleChange('smileCurve', Number(e.target.value))}
-                      className="w-full accent-amber-400"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-400">
-                      <span>头部张力</span>
-                      <span className="font-mono-nums text-zinc-200">
-                        {facialMuscles.headTension.toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0.4}
-                      max={1.5}
-                      step={0.04}
-                      value={facialMuscles.headTension}
-                      onChange={(e) => handleMuscleChange('headTension', Number(e.target.value))}
-                      className="w-full accent-amber-400"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-400">
-                      <span>唇肌锐度</span>
-                      <span className="font-mono-nums text-zinc-200">
-                        {facialMuscles.lipSyncSharpness.toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0.6}
-                      max={1.6}
-                      step={0.04}
-                      value={facialMuscles.lipSyncSharpness}
-                      onChange={(e) => handleMuscleChange('lipSyncSharpness', Number(e.target.value))}
-                      className="w-full accent-amber-400"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <EmotionActionSection
+          selectedClip={selectedClip}
+          clips={clips}
+          subtitles={subtitles}
+          platform={platform}
+          brief={brief}
+          scriptText={scriptText}
+          selectedAction={selectedAction}
+          setSelectedAction={setSelectedAction}
+          previousAction={previousAction}
+          setPreviousAction={setPreviousAction}
+          actionIntensity={actionIntensity}
+          setActionIntensity={setActionIntensity}
+          actionBlendDuration={actionBlendDuration}
+          setActionBlendDuration={setActionBlendDuration}
+          actionSyncNotice={actionSyncNotice}
+          setActionSyncNotice={setActionSyncNotice}
+          autoActionSuggestEnabled={autoActionSuggestEnabled}
+          setAutoActionSuggestEnabled={setAutoActionSuggestEnabled}
+          setAiActionSuggestion={setAiActionSuggestion}
+          analyzingActionSuggestion={analyzingActionSuggestion}
+          setAnalyzingActionSuggestion={setAnalyzingActionSuggestion}
+          actionSuggestNote={actionSuggestNote}
+          setActionSuggestNote={setActionSuggestNote}
+          activeActionRecommendation={activeActionRecommendation}
+          prevTimelineAction={prevTimelineAction}
+          emotionMatchEnabled={emotionMatchEnabled}
+          setEmotionMatchEnabled={setEmotionMatchEnabled}
+          selectedEmotion={selectedEmotion}
+          setSelectedEmotion={setSelectedEmotion}
+          facialMuscles={facialMuscles}
+          setFacialMuscles={setFacialMuscles}
+          analyzingEmotion={analyzingEmotion}
+          emotionAnalysis={emotionAnalysis}
+          emotionNote={emotionNote}
+          setEmotionNote={setEmotionNote}
+          poseBlendRef={poseBlendRef}
+          syncEmotionToSelectedClip={syncEmotionToSelectedClip}
+          handleAnalyzeVoiceEmotion={handleAnalyzeVoiceEmotion}
+          onUpdateClipDigitalHumanAction={onUpdateClipDigitalHumanAction}
+          onBatchApplyDigitalHumanActions={onBatchApplyDigitalHumanActions}
+        />
 
         {/* Camera Motion Enhancement (Dolly Push/Pull, Pan Sweep, Handheld Shake) */}
         <div className="rounded-lg border border-sky-500/30 bg-[#11141B] p-2.5 space-y-2.5">
@@ -2902,383 +1590,84 @@ export function DigitalHumanTab({
           )}
         </div>
 
-        {/* Drive Mode Switch */}
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setDriveMode('ai-script')}
-            className={`py-1.5 px-2 rounded-md border text-[11px] font-medium transition-colors ${
-              driveMode === 'ai-script'
-                ? 'border-cyan-500/70 bg-cyan-500/15 text-cyan-100'
-                : 'border-zinc-800 bg-[#11141B] text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            AI 台词合成驱动
-          </button>
-          <button
-            type="button"
-            onClick={() => setDriveMode('recorded-audio')}
-            className={`py-1.5 px-2 rounded-md border text-[11px] font-medium transition-colors ${
-              driveMode === 'recorded-audio'
-                ? 'border-cyan-500/70 bg-cyan-500/15 text-cyan-100'
-                : 'border-zinc-800 bg-[#11141B] text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            录制 / 原声直驱
-          </button>
-        </div>
+        <DriveSection
+          driveMode={driveMode}
+          setDriveMode={setDriveMode}
+          scriptText={scriptText}
+          setScriptText={setScriptText}
+          drivingSpeech={drivingSpeech}
+          setDrivingSpeech={setDrivingSpeech}
+          driveError={driveError}
+          setDriveError={setDriveError}
+          drivenAudio={drivenAudio}
+          setDrivenAudio={setDrivenAudio}
+          speechEstimate={speechEstimate}
+          isRecordingVoice={isRecordingVoice}
+          recordElapsedSec={recordElapsedSec}
+          voiceRecordError={voiceRecordError}
+          voiceAudioInputRef={voiceAudioInputRef}
+          handleToggleMicRecord={handleToggleMicRecord}
+          activeAnchor={activeAnchor}
+          clonedVoices={clonedVoices}
+          platform={platform}
+          emotionMatchEnabled={emotionMatchEnabled}
+          phonemeAlignEnabled={phonemeAlignEnabled}
+          phonemeOffsetMs={phonemeOffsetMs}
+          phonemeOnsetAdvanceMs={phonemeOnsetAdvanceMs}
+          setFullClipDuration={setFullClipDuration}
+          handleAnalyzeVoiceEmotion={handleAnalyzeVoiceEmotion}
+          runClientPhonemeAnalysis={runClientPhonemeAnalysis}
+          playAudioSnippet={playAudioSnippet}
+          setPhonemeAlignment={setPhonemeAlignment}
+          setPhonemeNotice={setPhonemeNotice}
+          syncPhonemeAlignmentToSelectedClip={syncPhonemeAlignmentToSelectedClip}
+          isPreviewingMiniStage={isPreviewingMiniStage}
+          stopPreviewAudio={stopPreviewAudio}
+          selectedClip={selectedClip}
+          selectedClipStartTime={selectedClipStartTime}
+          subtitles={subtitles}
+        />
 
-        {driveMode === 'ai-script' ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px]">
-              <label htmlFor="dh-script-input" className="text-zinc-400">
-                数字人口播台词
-              </label>
-              <button
-                type="button"
-                onClick={handleFillSubtitlesFromClip}
-                className="text-[10px] text-cyan-300 hover:text-cyan-200"
-              >
-                导入当前片段字幕
-              </button>
-            </div>
-            <textarea
-              id="dh-script-input"
-              rows={3}
-              value={scriptText}
-              onChange={(e) => setScriptText(e.target.value)}
-              placeholder="输入想让虚拟主播说的话（支持长台词，自动分段合成并拼接）..."
-              className="w-full rounded-md bg-[#11141B] border border-zinc-800 px-2.5 py-2 text-xs text-zinc-100 focus:outline-none focus:border-cyan-500 resize-y"
-            />
-            <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-400 font-mono-nums px-0.5">
-              <span>
-                {speechEstimate.charCount > 0
-                  ? `约 ${speechEstimate.charCount} 字 · ${
-                      speechEstimate.segmentCount > 1
-                        ? `自动分 ${speechEstimate.segmentCount} 段合成并拼接`
-                        : '单段合成'
-                    }`
-                  : '支持长台词自动分段拼接'}
-              </span>
-              <span className="text-cyan-300 font-semibold">
-                {speechEstimate.charCount > 0
-                  ? `预估时长 ≈ ${speechEstimate.durationSec.toFixed(1)}s`
-                  : '预估时长 0.0s'}
-              </span>
-            </div>
-            <button
-              type="button"
-              disabled={drivingSpeech || !scriptText.trim()}
-              onClick={() => void handleSynthesizeAnchorSpeech()}
-              className="w-full py-2 px-3 rounded-md bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors"
-            >
-              {drivingSpeech ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>
-                    {speechEstimate.segmentCount > 1
-                      ? `正在分段合成并拼接 (${speechEstimate.segmentCount} 段)...`
-                      : '正在合成主播语音驱动...'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>
-                    AI 合成语音并驱动主播
-                    {speechEstimate.charCount > 0
-                      ? `（预估 ${speechEstimate.durationSec.toFixed(1)}s）`
-                      : ''}
-                  </span>
-                </>
-              )}
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-[10px] text-zinc-400 leading-relaxed">
-              用真人麦克风录音或导入干声直接驱动虚拟主播呼吸动效与声浪口播，零等待、免 AI 额度消耗。
-            </p>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => void handleToggleMicRecord()}
-                className={`flex-1 py-2 px-2.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
-                  isRecordingVoice
-                    ? 'bg-red-600 hover:bg-red-500 text-white'
-                    : 'bg-cyan-600 hover:bg-cyan-500 text-white'
-                }`}
-              >
-                {isRecordingVoice ? (
-                  <>
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                    <span className="font-mono-nums">结束录制 {recordElapsedSec.toFixed(1)}s</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>录制驱动语音</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => voiceAudioInputRef.current?.click()}
-                className="py-2 px-2.5 rounded-md border border-zinc-700 bg-[#11141B] hover:bg-zinc-800 text-xs text-zinc-200 shrink-0"
-              >
-                导入音频
-              </button>
-            </div>
-          </div>
-        )}
-
-        {driveError && (
-          <div className="rounded-md border border-red-500/40 bg-red-950/30 p-2 text-[11px] text-red-200 leading-snug">
-            {driveError}
-          </div>
-        )}
-
-        {drivenAudio && (
-          <div className="rounded-md border border-emerald-500/35 bg-emerald-950/20 px-2.5 py-2 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[11px] font-medium text-emerald-200 truncate">
-                驱动音轨就绪 · {drivenAudio.durationSec.toFixed(1)}s
-                {drivenAudio.segmentCount && drivenAudio.segmentCount > 1
-                  ? `（已拼接 ${drivenAudio.segmentCount} 段）`
-                  : ''}
-              </div>
-              <div className="text-[10px] text-zinc-400 truncate">{drivenAudio.text}</div>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                isPreviewingMiniStage
-                  ? stopPreviewAudio()
-                  : playAudioSnippet(drivenAudio.audioBase64, drivenAudio.mimeType)
-              }
-              className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-[11px] font-semibold text-white flex items-center gap-1 shrink-0"
-            >
-              {isPreviewingMiniStage ? (
-                <>
-                  <Square className="w-3 h-3 fill-current" />
-                  <span>停止</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-3 h-3" />
-                  <span>试听驱动</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Multilingual Voice Synthesis (Script Translation + Cross-Lingual Voice Cloning) */}
-        <div className="rounded-lg border border-indigo-500/30 bg-[#11141B] p-2.5 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold text-indigo-200 flex items-center gap-1.5">
-                <Languages className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span>多语言语音合成（声线克隆配音）</span>
-              </span>
-              <span className="block text-[10px] text-zinc-400 mt-0.5">
-                AI 自动翻译现有脚本并克隆原声线特征生成目标语种配音
-              </span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={multilingualEnabled}
-              aria-label="多语言语音合成"
-              onClick={() => setMultilingualEnabled((v) => !v)}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
-                multilingualEnabled
-                  ? 'bg-indigo-500 border-indigo-400'
-                  : 'bg-zinc-800 border-zinc-700'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  multilingualEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </div>
-
-          {multilingualEnabled && (() => {
-            const boundClone = activeAnchor?.clonedVoiceId
-              ? clonedVoices.find((v) => v.id === activeAnchor.clonedVoiceId)
-              : undefined;
-            const voiceRefLabel = recordedVoice
-              ? '个人录制原声纹'
-              : boundClone
-                ? `克隆音色 · ${boundClone.name}`
-                : activeAnchor?.sampleAudioBase64
-                  ? `${activeAnchor.name} 原声采样`
-                  : `${activeAnchor?.name || '主播'} (${activeAnchor?.baseVoice || 'Kore'})`;
-            const selectedLangMeta = getDigitalHumanLanguageOption(targetLanguage);
-
-            return (
-              <div className="space-y-2.5 pt-1.5 border-t border-zinc-800/80">
-                <div className="flex items-center justify-between gap-2 text-[10px]">
-                  <span className="text-zinc-400">选择目标语种</span>
-                  <span className="text-indigo-300 font-medium truncate max-w-[180px]" title={voiceRefLabel}>
-                    声线克隆参考：{voiceRefLabel}
-                  </span>
-                </div>
-
-                <div
-                  className="grid grid-cols-3 gap-1"
-                  role="radiogroup"
-                  aria-label="目标语种"
-                >
-                  {DIGITAL_HUMAN_LANGUAGES.map((lang) => {
-                    const isSel = targetLanguage === lang.id;
-                    return (
-                      <button
-                        key={lang.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={isSel}
-                        onClick={() => setTargetLanguage(lang.id)}
-                        className={`px-2 py-1.5 rounded-md border text-left transition-colors ${
-                          isSel
-                            ? 'border-indigo-400 bg-indigo-500/20 text-indigo-100'
-                            : 'border-zinc-800 bg-[#0B0D10] text-zinc-300 hover:border-zinc-600'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] font-semibold truncate">{lang.label}</span>
-                          <span className="text-[8px] font-mono-nums text-indigo-300 shrink-0">
-                            {lang.shortTag}
-                          </span>
-                        </div>
-                        <span className="block text-[9px] text-zinc-400 truncate">
-                          {lang.nativeName}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <label className="flex items-center gap-2 text-[10px] text-zinc-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={applyTranslatedToCaption}
-                    onChange={(e) => setApplyTranslatedToCaption(e.target.checked)}
-                    className="accent-indigo-500"
-                  />
-                  <span>将「{selectedLangMeta.label}」译文同步设为数字人驱动字幕文案</span>
-                </label>
-
-                <button
-                  type="button"
-                  disabled={synthesizingMultilingual}
-                  onClick={() => void handleSynthesizeMultilingualDub(false)}
-                  className="w-full py-2 px-3 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  {synthesizingMultilingual ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>正在翻译并克隆声线合成{selectedLangMeta.label}配音...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Languages className="w-3.5 h-3.5" />
-                      <span>AI 翻译脚本并克隆声线合成 ({selectedLangMeta.label})</span>
-                    </>
-                  )}
-                </button>
-
-                {multilingualError && (
-                  <div className="rounded border border-red-500/40 bg-red-950/30 p-2 text-[10px] text-red-200 leading-snug">
-                    {multilingualError}
-                  </div>
-                )}
-
-                {multilingualResult && (
-                  <div className="rounded-md border border-indigo-500/40 bg-indigo-950/25 p-2.5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-indigo-200 truncate">
-                        {multilingualResult.targetLanguageLabel}克隆配音就绪 ·{' '}
-                        {multilingualResult.audioDurationSec.toFixed(1)}s
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          isPreviewingMiniStage
-                            ? stopPreviewAudio()
-                            : playAudioSnippet(
-                                multilingualResult.audioBase64,
-                                multilingualResult.mimeType
-                              )
-                        }
-                        className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-[10px] font-semibold text-white flex items-center gap-1 shrink-0"
-                      >
-                        {isPreviewingMiniStage ? (
-                          <>
-                            <Square className="w-2.5 h-2.5 fill-current" />
-                            <span>停止</span>
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-2.5 h-2.5" />
-                            <span>试听多语言配音</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <p className="text-[10px] text-indigo-200/85 leading-snug">
-                      声线特征继承：{multilingualResult.voiceCloneSummary}
-                    </p>
-
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                        <span>译文台词预览（支持微调重合成）</span>
-                        <span className="font-mono-nums text-indigo-300">
-                          {multilingualResult.baseVoice}
-                        </span>
-                      </div>
-                      <textarea
-                        rows={2}
-                        value={editableTranslatedScript}
-                        onChange={(e) => setEditableTranslatedScript(e.target.value)}
-                        className="w-full rounded bg-[#0B0D10] border border-zinc-800 px-2 py-1.5 text-[11px] text-zinc-100 focus:outline-none focus:border-indigo-400 resize-none"
-                      />
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          disabled={synthesizingMultilingual || !editableTranslatedScript.trim()}
-                          onClick={() => void handleSynthesizeMultilingualDub(true)}
-                          className="flex-1 py-1 px-2 rounded border border-indigo-500/45 bg-indigo-500/15 hover:bg-indigo-500/25 disabled:opacity-45 text-[10px] font-medium text-indigo-200 transition-colors"
-                        >
-                          按修改后译文重合成
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!editableTranslatedScript.trim()}
-                          onClick={() => {
-                            setScriptText(editableTranslatedScript.trim());
-                            if (drivenAudio) {
-                              setDrivenAudio({
-                                ...drivenAudio,
-                                text: editableTranslatedScript.trim(),
-                              });
-                            }
-                          }}
-                          className="py-1 px-2 rounded border border-zinc-700 bg-[#0B0D10] hover:bg-zinc-800 disabled:opacity-45 text-[10px] text-zinc-300 transition-colors"
-                        >
-                          填入台词框
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
+        <MultilingualSection
+          multilingualEnabled={multilingualEnabled}
+          setMultilingualEnabled={setMultilingualEnabled}
+          targetLanguage={targetLanguage}
+          setTargetLanguage={setTargetLanguage}
+          synthesizingMultilingual={synthesizingMultilingual}
+          setSynthesizingMultilingual={setSynthesizingMultilingual}
+          multilingualResult={multilingualResult}
+          setMultilingualResult={setMultilingualResult}
+          editableTranslatedScript={editableTranslatedScript}
+          setEditableTranslatedScript={setEditableTranslatedScript}
+          applyTranslatedToCaption={applyTranslatedToCaption}
+          setApplyTranslatedToCaption={setApplyTranslatedToCaption}
+          multilingualError={multilingualError}
+          setMultilingualError={setMultilingualError}
+          scriptText={scriptText}
+          setScriptText={setScriptText}
+          drivenAudio={drivenAudio}
+          setDrivenAudio={setDrivenAudio}
+          activeAnchor={activeAnchor}
+          recordedVoice={recordedVoice}
+          clonedVoices={clonedVoices}
+          selectedClip={selectedClip}
+          subtitles={subtitles}
+          platform={platform}
+          emotionMatchEnabled={emotionMatchEnabled}
+          phonemeAlignEnabled={phonemeAlignEnabled}
+          phonemeOffsetMs={phonemeOffsetMs}
+          phonemeOnsetAdvanceMs={phonemeOnsetAdvanceMs}
+          setFullClipDuration={setFullClipDuration}
+          handleAnalyzeVoiceEmotion={handleAnalyzeVoiceEmotion}
+          runClientPhonemeAnalysis={runClientPhonemeAnalysis}
+          playAudioSnippet={playAudioSnippet}
+          selectedClipStartTime={selectedClipStartTime}
+          setPhonemeAlignment={setPhonemeAlignment}
+          setPhonemeNotice={setPhonemeNotice}
+          syncPhonemeAlignmentToSelectedClip={syncPhonemeAlignmentToSelectedClip}
+          isPreviewingMiniStage={isPreviewingMiniStage}
+          stopPreviewAudio={stopPreviewAudio}
+        />
       </div>
 
       {/* 3. Embed into Video Track for Seamless Mixed Editing */}
