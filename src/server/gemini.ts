@@ -1,10 +1,11 @@
 import { GoogleGenAI } from '@google/genai';
+import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
 
-const PUBLIC_STABLE_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-3.1-flash-lite'] as const;
+const PUBLIC_STABLE_TEXT_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'] as const;
 const PUBLIC_STABLE_TTS_MODELS = ['gemini-2.5-flash-preview-tts', 'gemini-3.8-flash-lite-tts'] as const;
 const PUBLIC_STABLE_TRANSCRIBE_MODELS = [
   'gemini-3.5-transcribe',
-  'gemini-2.5-flash',
+  'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
 ] as const;
 
@@ -113,11 +114,37 @@ export async function generateTextContentWithFallback(
   throw lastErr instanceof Error ? lastErr : new Error('Text model invocation failed');
 }
 
+function envProxy(): string {
+  return (
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    process.env.https_proxy ||
+    process.env.http_proxy ||
+    ''
+  ).trim();
+}
+
+let proxyFetchUrl = '';
+let proxyFetchImpl: typeof fetch | undefined;
+
+function fetchThroughProxy(proxy: string): typeof fetch {
+  if (proxyFetchImpl && proxyFetchUrl === proxy) return proxyFetchImpl;
+  const dispatcher = new ProxyAgent(proxy);
+  proxyFetchUrl = proxy;
+  proxyFetchImpl = ((input: Parameters<typeof undiciFetch>[0], init?: UndiciRequestInit) =>
+    undiciFetch(input, {
+      ...init,
+      dispatcher,
+    })) as typeof fetch;
+  return proxyFetchImpl;
+}
+
 export function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured in environment secrets.');
   }
+  const proxy = envProxy();
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
@@ -125,6 +152,7 @@ export function getGeminiClient() {
       headers: {
         'User-Agent': 'aistudio-build',
       },
+      ...(proxy ? { fetch: fetchThroughProxy(proxy) } : {}),
     },
   });
 }

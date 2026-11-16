@@ -1,6 +1,8 @@
 # ClipFlow 交接
 
-写于 2026-11-17 00:30 左右。仓库 `d:\clipflow\clipflow`，分支 `main`，跟踪 `origin/main`（`https://github.com/tan520li-debug/clipflow.git`）。HEAD 仍是 `83622e6`。本班改动都在本地 `main`，没有提交，也没有推送。不要把 `data/`、`.env` 提交进去。
+写于 2026-11-17 00:30 左右，01:25 补过实测。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。已提交的改动在本地分支 `cursor/studio-followup`，提交 `d65437d`，没有推送，也没有合进 `main`。代理和转码的后续改动还在这份工作区里，没有再提交。不要把 `data/`、`.env` 提交进去。
+
+2026-11-17 01:20 左右实测：本机有 `HTTPS_PROXY`（`127.0.0.1:10809`）。Gemini 官方 SDK 不走这个代理，直连会超时。`getGeminiClient` 在有代理时用 `undici` 的 `ProxyAgent`。`gemini-2.5-flash` 对新用户返回 404，默认文本模型改为 `gemini-3.1-flash-lite`，忙的时候再试 `gemini-3.8-flash`。页面上点过「AI 生成多平台成片」，预览标题改成了「3分钟早八续命神器：极简冰燕麦拿铁」。转码结果文件名是 `.bin`，ffmpeg 认不出封装；已改成显式 `-f mp4`。本机 ffmpeg 用 `.env` 的 `FFMPEG_PATH`（`D:/w2l-work/bin/ffmpeg.exe`）。720p 导出页面显示「已通过服务端 FFmpeg 转码为高兼容 H.264 MP4」，下载是 1.4 MB 的 `.mp4`。
 
 ## 2026-11-17 凌晨做完的
 

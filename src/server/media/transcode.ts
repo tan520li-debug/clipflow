@@ -33,10 +33,13 @@ export async function transcodeVideoFileToH264Mp4(
       '160k',
       '-ac',
       '2',
+      '-f',
+      'mp4',
       outputPath,
     ];
 
-    const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const ffmpegBin = (process.env.FFMPEG_PATH || '').trim() || 'ffmpeg';
+    const proc = spawn(ffmpegBin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderrTail = '';
     let settled = false;
 

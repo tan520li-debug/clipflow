@@ -64,7 +64,9 @@ async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<
       contentType: result.contentType,
       filename: result.filename,
     });
-  } catch {
+  } catch (err: unknown) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[job ${id}]`, detail);
     await failJob(id, 500, '任务执行失败，请稍后重试。').catch(() => undefined);
   }
 }
