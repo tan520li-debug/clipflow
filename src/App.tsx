@@ -19,6 +19,7 @@ import type {
   DigitalHumanClipConfig,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
+  DigitalHumanPhonemeAlignmentProfile,
   DigitalHumanProfile,
   EditingStyle,
   MediaAiTags,
@@ -1155,6 +1156,7 @@ export default function App() {
       text: string;
       baseVoice: VoiceoverVoice;
       clonedVoiceId?: string;
+      phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
     }
   ) => {
     let targetStart = 0;
@@ -1207,6 +1209,7 @@ export default function App() {
             source: 'ai-tts' as const,
             clonedVoiceId: drivenAudio.clonedVoiceId,
             audioDurationSec: cueDuration,
+            phonemeAlignment: drivenAudio.phonemeAlignment ?? config.phonemeAlignment,
           },
         ].sort((a, b) => a.startTime - b.startTime);
 
@@ -1367,6 +1370,36 @@ export default function App() {
     }));
   };
 
+  const handleUpdateClipDigitalHumanPhonemeAlignment = (
+    clipId: string,
+    phonemeAlignment: DigitalHumanPhonemeAlignmentProfile
+  ) => {
+    updateCurrentProject((prev) => {
+      const targetClip = prev.clips.find((c) => c.id === clipId);
+      const linkedCueId = targetClip?.digitalHuman?.linkedCueId;
+      return {
+        ...prev,
+        clips: prev.clips.map((c) =>
+          c.id === clipId && c.digitalHuman
+            ? {
+                ...c,
+                digitalHuman: {
+                  ...c.digitalHuman,
+                  phonemeAlignment,
+                },
+              }
+            : c
+        ),
+        voiceoverCues:
+          linkedCueId && prev.voiceoverCues
+            ? prev.voiceoverCues.map((cue) =>
+                cue.id === linkedCueId ? { ...cue, phonemeAlignment } : cue
+              )
+            : prev.voiceoverCues,
+      };
+    });
+  };
+
   const handleInsertDigitalHumanClip = ({
     insertAt,
     config,
@@ -1385,6 +1418,7 @@ export default function App() {
       text: string;
       baseVoice: VoiceoverVoice;
       clonedVoiceId?: string;
+      phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
     };
   }) => {
     // Ensure a MediaAsset exists for the digital human anchor so asset lookup & timeline thumbnails work
@@ -1487,6 +1521,7 @@ export default function App() {
             source: 'ai-tts' as const,
             clonedVoiceId: drivenAudio.clonedVoiceId,
             audioDurationSec: cueDur,
+            phonemeAlignment: drivenAudio.phonemeAlignment ?? config.phonemeAlignment,
           },
         ].sort((a, b) => a.startTime - b.startTime);
 
@@ -1644,6 +1679,7 @@ export default function App() {
               onBatchApplyDigitalHumanActions={handleBatchApplyDigitalHumanActions}
               onUpdateClipDigitalHumanEmotion={handleUpdateClipDigitalHumanEmotion}
               onUpdateClipDigitalHumanCameraMotion={handleUpdateClipDigitalHumanCameraMotion}
+              onUpdateClipDigitalHumanPhonemeAlignment={handleUpdateClipDigitalHumanPhonemeAlignment}
               onInsertDigitalHumanClip={handleInsertDigitalHumanClip}
               brief={brief}
             />

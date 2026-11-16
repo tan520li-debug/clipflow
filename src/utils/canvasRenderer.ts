@@ -6,6 +6,7 @@ import type {
   DigitalHumanClipConfig,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
+  DigitalHumanPhonemeAlignmentProfile,
   MediaAsset,
   MotionType,
   SubtitleSegment,
@@ -18,7 +19,10 @@ import {
   getDigitalHumanActionTemplate,
   getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
+  getVisemeDisplayMeta,
   getVoiceActivityAtTime,
+  type SampledPhonemeLipState,
+  samplePhonemeAlignmentAtTime,
 } from './digitalHumanAssets';
 
 export type LoadedMediaElement = HTMLImageElement | HTMLVideoElement;
@@ -479,6 +483,17 @@ export function renderTimelineFrame({
   const blendState = clip.digitalHuman
     ? computeClipPoseBlendState(clip, prevClip, localTime)
     : undefined;
+  const clipStartSec = timeSec - localTime;
+  const phonemeState = clip.digitalHuman
+    ? resolveClipPhonemeLipState(
+        clip.digitalHuman,
+        voiceoverCues,
+        timeSec,
+        clipStartSec,
+        voiceActivity,
+        voiceoverEnabled
+      )
+    : undefined;
 
   if (clip.digitalHuman?.mode === 'full-scene') {
     drawDigitalHumanFullScene(
@@ -492,7 +507,8 @@ export function renderTimelineFrame({
       clip.filter,
       voiceActivity,
       clip.colorAdjustments,
-      blendState
+      blendState,
+      phonemeState
     );
     if (inTransition && clip.transition === 'flash') {
       ctx.save();
@@ -711,7 +727,8 @@ export function renderTimelineFrame({
       timeSec,
       voiceActivity,
       progress,
-      blendState
+      blendState,
+      phonemeState
     );
   }
 
@@ -740,6 +757,38 @@ interface ActionPoseKinematics {
   microTilt: number;
   shiftX: number;
   bobY: number;
+}
+
+function resolveClipPhonemeLipState(
+  dh: DigitalHumanClipConfig,
+  cues: VoiceoverCue[] | undefined,
+  timeSec: number,
+  clipStartSec: number,
+  fallbackActivity: number,
+  voiceoverEnabled = true
+): SampledPhonemeLipState {
+  if (!voiceoverEnabled) {
+    return samplePhonemeAlignmentAtTime(undefined, 0, 0, 1);
+  }
+  const matchingCue =
+    cues?.find((c) => dh.linkedCueId && c.id === dh.linkedCueId) ??
+    cues?.find((c) => {
+      const rate = c.playbackRate && c.playbackRate > 0 ? c.playbackRate : 1;
+      const dur = (c.audioDurationSec ?? c.duration) / rate;
+      return timeSec >= c.startTime - 0.06 && timeSec <= c.startTime + dur + 0.06;
+    });
+
+  const profile = dh.phonemeAlignment ?? matchingCue?.phonemeAlignment;
+  const localAudioTime = matchingCue
+    ? Math.max(0, timeSec - matchingCue.startTime)
+    : Math.max(0, timeSec - clipStartSec);
+
+  return samplePhonemeAlignmentAtTime(
+    profile,
+    localAudioTime,
+    fallbackActivity,
+    matchingCue?.playbackRate ?? 1
+  );
 }
 
 interface DigitalHumanPoseBlendState {
@@ -857,14 +906,19 @@ function drawAnchorPortraitCover(
   cameraMotion?: DigitalHumanCameraMotion,
   progress = 0.5,
   blendFromAction?: DigitalHumanActionId,
-  blendWeight = 1
+  blendWeight = 1,
+  phonemeState?: SampledPhonemeLipState,
+  isSvgAvatar = false
 ) {
   const natW = el instanceof HTMLVideoElement ? el.videoWidth || 540 : el.naturalWidth || 540;
   const natH = el instanceof HTMLVideoElement ? el.videoHeight || 720 : el.naturalHeight || 720;
   if (!natW || !natH) return;
 
   const m = muscles ? clampFacialMuscles(muscles) : getDigitalHumanEmotionPreset(emotion).muscles;
-  const jawDrive = speechPulse * m.jawOpenness * (0.7 + 0.3 * m.lipSyncSharpness);
+  const effectivePulse = phonemeState?.active
+    ? Math.min(1.25, 0.32 * speechPulse + 0.78 * phonemeState.jawOpen)
+    : speechPulse;
+  const jawDrive = effectivePulse * m.jawOpenness * (0.7 + 0.3 * m.lipSyncSharpness);
   const tension = m.headTension;
 
   const baseFilter = getCanvasFilterString(filter, colorAdj);
@@ -886,7 +940,7 @@ function drawAnchorPortraitCover(
   const targetPose = computeActionPoseKinematics(
     action,
     timeSec,
-    speechPulse,
+    effectivePulse,
     jawDrive,
     tension,
     dw,
@@ -905,7 +959,7 @@ function drawAnchorPortraitCover(
     const fromPose = computeActionPoseKinematics(
       blendFromAction,
       timeSec,
-      speechPulse,
+      effectivePulse,
       jawDrive,
       tension,
       dw,
@@ -927,8 +981,15 @@ function drawAnchorPortraitCover(
   // Camera Motion Enhancement (Dolly push/pull, Pan sweep, Handheld shake)
   const cam = computeDigitalHumanCameraTransform(cameraMotion, timeSec, progress, dw, dh);
 
-  const finalW = natW * coverScale * poseScale * emotionZoom * cam.zoom;
-  const finalH = natH * coverScale * poseScale * poseScaleY * emotionZoom * cam.zoom;
+  const phonemeWidthElastic = phonemeState?.active
+    ? 1 + (phonemeState.mouthWidth - 1) * 0.015
+    : 1;
+  const phonemeJawElastic = phonemeState?.active
+    ? 1 + phonemeState.jawOpen * 0.018 * m.jawOpenness
+    : 1;
+
+  const finalW = natW * coverScale * poseScale * phonemeWidthElastic * emotionZoom * cam.zoom;
+  const finalH = natH * coverScale * poseScale * poseScaleY * phonemeJawElastic * emotionZoom * cam.zoom;
 
   ctx.translate(
     dx + dw / 2 + shiftX + cam.offsetX,
@@ -937,6 +998,79 @@ function drawAnchorPortraitCover(
   ctx.rotate(microTilt + cam.rotationRad);
   // Bias vertical alignment slightly upward to preserve head & face framing
   ctx.drawImage(el, -finalW / 2, -finalH * 0.42, finalW, finalH);
+
+  // Articulated mouth viseme animation directly anchored on vector avatar mouth coordinates
+  if (isSvgAvatar && phonemeState?.active) {
+    const mouthCx = 0;
+    // Built-in 540x720 studio avatars place smile at y~330 (~0.458 of height -> offset 0.038 below 0.42 pivot)
+    const mouthCy = finalH * 0.038;
+    const baseSpanW = finalW * 0.095 * phonemeState.mouthWidth * (1 - phonemeState.pucker * 0.28);
+    const openAmt = Math.min(
+      1,
+      phonemeState.jawOpen * m.jawOpenness * (0.72 + 0.28 * m.lipSyncSharpness)
+    );
+    const openH = Math.max(1.2, finalH * (0.004 + openAmt * 0.034));
+    const smileY = -m.smileCurve * (openH * 0.28);
+
+    ctx.save();
+    ctx.filter = 'none';
+    if (openAmt > 0.08) {
+      // Soft skin tone cover behind animated mouth cavity so static SVG line softens during speech
+      ctx.fillStyle = 'rgba(232, 178, 152, 0.72)';
+      ctx.beginPath();
+      ctx.ellipse(mouthCx, mouthCy + openH * 0.12, baseSpanW * 0.62, openH * 0.78, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner oral cavity
+      ctx.fillStyle = '#3b151c';
+      ctx.beginPath();
+      if (phonemeState.pucker > 0.45) {
+        // Rounded O / U vowel aperture
+        const rx = Math.max(3, baseSpanW * 0.38);
+        const ry = Math.max(2.5, openH * 0.62);
+        ctx.ellipse(mouthCx, mouthCy + openH * 0.14, rx, ry, 0, 0, Math.PI * 2);
+      } else {
+        // Natural anatomical mouth curve
+        ctx.moveTo(mouthCx - baseSpanW * 0.52, mouthCy + smileY);
+        ctx.quadraticCurveTo(mouthCx, mouthCy - openH * 0.22, mouthCx + baseSpanW * 0.52, mouthCy + smileY);
+        ctx.quadraticCurveTo(mouthCx, mouthCy + openH * 1.1, mouthCx - baseSpanW * 0.52, mouthCy + smileY);
+      }
+      ctx.fill();
+
+      // Subtle upper teeth glint for /aa/, /iy/, /sz/, /fv/ visemes
+      if (
+        openAmt > 0.2 &&
+        (phonemeState.viseme === 'aa' ||
+          phonemeState.viseme === 'iy' ||
+          phonemeState.viseme === 'sz' ||
+          phonemeState.viseme === 'fv')
+      ) {
+        ctx.fillStyle = 'rgba(255, 252, 248, 0.86)';
+        ctx.beginPath();
+        ctx.ellipse(
+          mouthCx,
+          mouthCy + openH * 0.08,
+          baseSpanW * 0.34,
+          Math.max(1.2, openH * 0.22),
+          0,
+          0,
+          Math.PI
+        );
+        ctx.fill();
+      }
+
+      // Soft lower-lip contour highlight
+      ctx.strokeStyle = '#c45b68';
+      ctx.lineWidth = Math.max(1.4, finalW * 0.0055);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(mouthCx - baseSpanW * 0.48, mouthCy + smileY);
+      ctx.quadraticCurveTo(mouthCx, mouthCy + openH * 0.96, mouthCx + baseSpanW * 0.48, mouthCy + smileY);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -949,12 +1083,14 @@ function drawDigitalHumanFacialMuscleRig(
   dw: number,
   dh: number,
   timeSec: number,
-  speechPulse: number
+  speechPulse: number,
+  phonemeState?: SampledPhonemeLipState
 ) {
   const m = clampFacialMuscles(muscles);
   const preset = getDigitalHumanEmotionPreset(emotion);
   const unit = Math.min(dw, dh);
-  const jawOpen = Math.min(1, speechPulse * m.jawOpenness);
+  const effectiveOpen = phonemeState?.active ? phonemeState.jawOpen : speechPulse;
+  const jawOpen = Math.min(1, effectiveOpen * m.jawOpenness);
 
   ctx.save();
 
@@ -996,23 +1132,40 @@ function drawDigitalHumanFacialMuscleRig(
     ctx.fillRect(dx, dy, dw, dh);
   }
 
-  // 2. Subtle articulated jaw / lip-sync muscle cadence arc at bottom collar zone
-  if (speechPulse > 0.04) {
+  // 2. Articulated phoneme viseme contour / jaw cadence indicator at bottom collar zone
+  if (effectiveOpen > 0.04 || phonemeState?.active) {
     const lipSharp = m.lipSyncSharpness;
-    const mouthW = unit * (0.14 + 0.05 * Math.max(0, m.smileCurve));
-    const mouthH = Math.max(
-      2.5,
-      unit * (0.015 + jawOpen * 0.058) * (0.75 + 0.25 * Math.abs(Math.sin(timeSec * (11 + lipSharp * 5))))
-    );
+    const visemeWidth = phonemeState?.active ? phonemeState.mouthWidth : 1;
+    const pucker = phonemeState?.active ? phonemeState.pucker : 0.1;
+    const mouthW =
+      unit * (0.14 + 0.05 * Math.max(0, m.smileCurve)) * visemeWidth * (1 - pucker * 0.25);
+    const mouthH = phonemeState?.active
+      ? Math.max(2, unit * (0.012 + jawOpen * 0.068 * (0.7 + 0.3 * lipSharp)))
+      : Math.max(
+          2.5,
+          unit *
+            (0.015 + jawOpen * 0.058) *
+            (0.75 + 0.25 * Math.abs(Math.sin(timeSec * (11 + lipSharp * 5))))
+        );
     const mx = dx + dw * 0.5;
     const my = dy + dh * 0.86;
+    const visemeMeta = phonemeState?.active ? getVisemeDisplayMeta(phonemeState.viseme) : null;
 
-    ctx.strokeStyle = preset.badgeColor;
+    ctx.strokeStyle = visemeMeta ? visemeMeta.badgeColor : preset.badgeColor;
     ctx.lineWidth = Math.max(1.5, unit * 0.014);
-    ctx.globalAlpha = 0.45 + jawOpen * 0.45;
+    ctx.globalAlpha = 0.45 + jawOpen * 0.48;
     ctx.beginPath();
-    ctx.ellipse(mx, my, mouthW * 0.5, mouthH * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(mx, my, Math.max(3, mouthW * 0.5), mouthH * 0.5, 0, 0, Math.PI * 2);
     ctx.stroke();
+
+    if (visemeMeta && dw >= 110) {
+      ctx.globalAlpha = 0.86;
+      ctx.fillStyle = visemeMeta.badgeColor;
+      ctx.font = `700 ${Math.max(8, Math.round(unit * 0.065))}px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(visemeMeta.shortTag, mx + mouthW * 0.55 + 4, my);
+    }
   }
 
   ctx.restore();
@@ -1347,7 +1500,8 @@ function drawDigitalHumanFullScene(
   filter: ColorFilter,
   voiceActivity: number,
   colorAdj?: ColorAdjustments,
-  blendState?: DigitalHumanPoseBlendState
+  blendState?: DigitalHumanPoseBlendState,
+  phonemeState?: SampledPhonemeLipState
 ) {
   const accent = dh.accentColor || '#fb7185';
   const action = dh.action ?? 'explain';
@@ -1364,7 +1518,10 @@ function drawDigitalHumanFullScene(
   const muscles = clampFacialMuscles(dh.facialMuscles ?? emotionPreset.muscles);
 
   const intensity = dh.actionIntensity ?? actionTmpl.recommendedIntensity ?? 1;
-  const speechPulse = Math.min(1, voiceActivity * (dh.speechIntensity ?? 1) * intensity);
+  const activeSignal = phonemeState?.active
+    ? 0.35 * voiceActivity + 0.65 * phonemeState.jawOpen
+    : voiceActivity;
+  const speechPulse = Math.min(1, activeSignal * (dh.speechIntensity ?? 1) * intensity);
 
   // Studio Backdrop (subtle emotion mood tint)
   const bg = ctx.createRadialGradient(
@@ -1392,7 +1549,8 @@ function drawDigitalHumanFullScene(
     ctx.restore();
   }
 
-  // Main Digital Human Portrait / Video with Pose + Facial Muscle Kinematics + Camera Motion
+  // Main Digital Human Portrait / Video with Pose + Facial Muscle Kinematics + Camera Motion + Phoneme Visemes
+  const isSvgAvatar = Boolean(dh.avatarUrl?.startsWith('data:image/svg+xml'));
   if (el) {
     const baseZoom = dh.cameraMotion?.enabled ? 1 : 1 + 0.03 * progress;
     const padW = width * baseZoom;
@@ -1415,12 +1573,14 @@ function drawDigitalHumanFullScene(
       dh.cameraMotion,
       progress,
       blendState?.blendFromAction,
-      blendState?.blendWeight ?? 1
+      blendState?.blendWeight ?? 1,
+      phonemeState,
+      isSvgAvatar
     );
   }
 
   // Facial Muscle Expression & Lip-Sync Rig Overlay
-  if (emotionEnabled) {
+  if (emotionEnabled || phonemeState?.active) {
     drawDigitalHumanFacialMuscleRig(
       ctx,
       emotion,
@@ -1430,7 +1590,8 @@ function drawDigitalHumanFullScene(
       width,
       height,
       timeSec,
-      speechPulse
+      speechPulse,
+      phonemeState
     );
   }
 
@@ -1452,7 +1613,8 @@ function drawDigitalHumanFullScene(
   // Lower-third / Header Anchor Studio Badge (above safe bottom caption zone)
   const camActive = dh.cameraMotion?.enabled && dh.cameraMotion.preset !== 'none';
   const camPreset = camActive ? getDigitalHumanCameraPreset(dh.cameraMotion?.preset) : null;
-  const badgeW = Math.min(width * 0.85, camPreset || fromActionTmpl ? 410 : 355);
+  const phonemeTag = phonemeState?.active ? ` · 音素${getVisemeDisplayMeta(phonemeState.viseme).shortTag}` : '';
+  const badgeW = Math.min(width * 0.88, camPreset || fromActionTmpl || phonemeTag ? 430 : 355);
   const badgeH = 34;
   const badgeX = width * 0.06;
   const badgeY = height * 0.12;
@@ -1464,7 +1626,7 @@ function drawDigitalHumanFullScene(
   ctx.fill();
   ctx.stroke();
 
-  // Live speaking pulse dot + name + active pose + emotion + camera tag
+  // Live speaking pulse dot + name + active pose + emotion + camera + phoneme tag
   ctx.fillStyle = speechPulse > 0.12 ? emotionPreset.badgeColor || accent : '#34d399';
   ctx.beginPath();
   ctx.arc(badgeX + 14, badgeY + badgeH / 2, 4 + speechPulse * 1.6, 0, Math.PI * 2);
@@ -1477,7 +1639,7 @@ function drawDigitalHumanFullScene(
   const poseText = fromActionTmpl ? `${fromActionTmpl.label}→${actionTmpl.label}` : actionTmpl.label;
   const emotionTag = emotionEnabled && emotion !== 'neutral' ? ` · ${emotionPreset.label}` : '';
   const camTag = camPreset ? ` · ${camPreset.label}` : '';
-  ctx.fillText(`虚拟主播 · ${dh.profileName} · ${poseText}${emotionTag}${camTag}`, badgeX + 26, badgeY + badgeH / 2);
+  ctx.fillText(`虚拟主播 · ${dh.profileName} · ${poseText}${emotionTag}${camTag}${phonemeTag}`, badgeX + 26, badgeY + badgeH / 2);
 
   if (dh.showLiveWaveRing) {
     drawVoiceWaveBars(
@@ -1505,7 +1667,8 @@ export function drawDigitalHumanPipOverlay(
   timeSec: number,
   voiceActivity: number,
   progress = 0.5,
-  blendState?: DigitalHumanPoseBlendState
+  blendState?: DigitalHumanPoseBlendState,
+  phonemeState?: SampledPhonemeLipState
 ) {
   const accent = dh.accentColor || '#fb7185';
   const action = dh.action ?? 'explain';
@@ -1522,7 +1685,10 @@ export function drawDigitalHumanPipOverlay(
   const muscles = clampFacialMuscles(dh.facialMuscles ?? emotionPreset.muscles);
 
   const intensity = dh.actionIntensity ?? actionTmpl.recommendedIntensity ?? 1;
-  const speechPulse = Math.min(1, voiceActivity * (dh.speechIntensity ?? 1) * intensity);
+  const activeSignal = phonemeState?.active
+    ? 0.35 * voiceActivity + 0.65 * phonemeState.jawOpen
+    : voiceActivity;
+  const speechPulse = Math.min(1, activeSignal * (dh.speechIntensity ?? 1) * intensity);
   const pointDir: -1 | 1 = dh.pipPosition.includes('right') ? -1 : 1;
 
   const scale = Math.max(0.2, Math.min(0.45, dh.pipScale || 0.3));
@@ -1610,6 +1776,7 @@ export function drawDigitalHumanPipOverlay(
   ctx.fillStyle = bg;
   ctx.fillRect(x, y, pipW, pipH);
 
+  const isSvgAvatar = Boolean(dh.avatarUrl?.startsWith('data:image/svg+xml'));
   if (el) {
     drawAnchorPortraitCover(
       ctx,
@@ -1629,11 +1796,13 @@ export function drawDigitalHumanPipOverlay(
       dh.cameraMotion,
       progress,
       blendState?.blendFromAction,
-      blendState?.blendWeight ?? 1
+      blendState?.blendWeight ?? 1,
+      phonemeState,
+      isSvgAvatar
     );
   }
 
-  if (emotionEnabled) {
+  if (emotionEnabled || phonemeState?.active) {
     drawDigitalHumanFacialMuscleRig(
       ctx,
       emotion,
@@ -1643,7 +1812,8 @@ export function drawDigitalHumanPipOverlay(
       pipW,
       pipH - (dh.showLiveWaveRing ? 18 : 0),
       timeSec,
-      speechPulse
+      speechPulse,
+      phonemeState
     );
   }
 
@@ -1733,7 +1903,9 @@ export function renderDigitalHumanMiniStage(
   muscles?: DigitalHumanFacialMuscles,
   cameraMotion?: DigitalHumanCameraMotion,
   blendFromAction?: DigitalHumanActionId,
-  blendWeight = 1
+  blendWeight = 1,
+  phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile,
+  phonemeSampleTimeSec?: number
 ) {
   const actionTmpl = getDigitalHumanActionTemplate(action);
   const isBlendingPose = Boolean(blendFromAction && blendFromAction !== action && blendWeight < 1);
@@ -1746,6 +1918,24 @@ export function renderDigitalHumanMiniStage(
     emotion !== 'neutral'
       ? emotionPreset.badgeColor
       : actionTmpl.badgeColor || accentColor;
+
+  const maxPhonemeT =
+    phonemeAlignment?.frames && phonemeAlignment.frames.length > 0
+      ? Math.max(0.5, phonemeAlignment.frames[phonemeAlignment.frames.length - 1].t)
+      : 3.2;
+  const queryAudioTime =
+    typeof phonemeSampleTimeSec === 'number'
+      ? phonemeSampleTimeSec
+      : timeSec % maxPhonemeT;
+  const phonemeState = samplePhonemeAlignmentAtTime(
+    phonemeAlignment,
+    queryAudioTime,
+    voiceActivity,
+    1
+  );
+  const drivenActivity = phonemeState.active
+    ? Math.min(1, 0.3 * voiceActivity + 0.75 * phonemeState.jawOpen)
+    : voiceActivity;
 
   ctx.clearRect(0, 0, width, height);
   const bg = ctx.createRadialGradient(
@@ -1769,16 +1959,17 @@ export function renderDigitalHumanMiniStage(
     return i;
   })();
 
-  if (voiceActivity > 0.05) {
+  if (drivenActivity > 0.05) {
     ctx.save();
-    ctx.globalAlpha = 0.18 + voiceActivity * 0.28;
+    ctx.globalAlpha = 0.18 + drivenActivity * 0.28;
     ctx.fillStyle = activeTone;
     ctx.beginPath();
-    ctx.arc(width * 0.5, height * 0.42, width * (0.34 + voiceActivity * 0.07), 0, Math.PI * 2);
+    ctx.arc(width * 0.5, height * 0.42, width * (0.34 + drivenActivity * 0.07), 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
+  const isSvgAvatar = avatarUrl.startsWith('data:image/svg+xml');
   if (img.complete && img.naturalWidth > 0) {
     const loopProgress = (timeSec % 3.2) / 3.2;
     drawAnchorPortraitCover(
@@ -1788,7 +1979,7 @@ export function renderDigitalHumanMiniStage(
       0,
       width,
       height,
-      voiceActivity,
+      drivenActivity,
       timeSec,
       'natural',
       undefined,
@@ -1799,11 +1990,13 @@ export function renderDigitalHumanMiniStage(
       cameraMotion,
       loopProgress,
       blendFromAction,
-      blendWeight
+      blendWeight,
+      phonemeState,
+      isSvgAvatar
     );
   }
 
-  // Facial muscle & mood shading overlay
+  // Facial muscle & mood shading overlay + Phoneme Viseme Rig
   drawDigitalHumanFacialMuscleRig(
     ctx,
     emotion,
@@ -1813,7 +2006,8 @@ export function renderDigitalHumanMiniStage(
     width,
     height - 24,
     timeSec,
-    voiceActivity
+    drivenActivity,
+    phonemeState
   );
 
   // Live Pose Gesture Overlay on Mini Stage (with smooth Motion Blending cross-fade)
@@ -1825,7 +2019,7 @@ export function renderDigitalHumanMiniStage(
     width,
     height - 24,
     timeSec,
-    voiceActivity,
+    drivenActivity,
     activeTone,
     1,
     { blendFromAction, blendWeight }
@@ -1861,8 +2055,8 @@ export function renderDigitalHumanMiniStage(
     14,
     3,
     3,
-    activeTone,
-    voiceActivity * (0.85 + 0.25 * resolvedMuscles.jawOpenness),
+    phonemeState.active ? getVisemeDisplayMeta(phonemeState.viseme).badgeColor : activeTone,
+    drivenActivity * (0.85 + 0.25 * resolvedMuscles.jawOpenness),
     timeSec
   );
   ctx.restore();

@@ -4,6 +4,7 @@ import {
   Check,
   Film,
   ImagePlus,
+  Languages,
   Layers,
   Loader2,
   Mic,
@@ -29,8 +30,11 @@ import type {
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
   DigitalHumanFrameShape,
+  DigitalHumanMultilingualResult,
+  DigitalHumanPhonemeAlignmentProfile,
   DigitalHumanPipPosition,
   DigitalHumanProfile,
+  DigitalHumanTargetLanguage,
   MediaAsset,
   PlatformId,
   SubtitleSegment,
@@ -39,6 +43,7 @@ import type {
   VoiceoverVoice,
 } from '../types/studio';
 import {
+  analyzeAudioForPhonemeAlignment,
   analyzeAudioProsodyForEmotion,
   analyzeScriptForActionSuggestions,
   BUILTIN_DIGITAL_HUMAN_PRESETS,
@@ -48,9 +53,13 @@ import {
   DIGITAL_HUMAN_ACTION_TEMPLATES,
   DIGITAL_HUMAN_CAMERA_PRESETS,
   DIGITAL_HUMAN_EMOTION_PRESETS,
+  DIGITAL_HUMAN_LANGUAGES,
   getDigitalHumanActionTemplate,
   getDigitalHumanCameraPreset,
   getDigitalHumanEmotionPreset,
+  getDigitalHumanLanguageOption,
+  getVisemeDisplayMeta,
+  realignPhonemeProfileOffset,
 } from '../utils/digitalHumanAssets';
 import { renderDigitalHumanMiniStage } from '../utils/canvasRenderer';
 
@@ -79,6 +88,7 @@ interface DigitalHumanTabProps {
       text: string;
       baseVoice: VoiceoverVoice;
       clonedVoiceId?: string;
+      phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
     }
   ) => void;
   onRemoveClipDigitalHuman: (clipId: string) => void;
@@ -112,6 +122,10 @@ interface DigitalHumanTabProps {
     clipId: string,
     cameraMotion: DigitalHumanCameraMotion
   ) => void;
+  onUpdateClipDigitalHumanPhonemeAlignment?: (
+    clipId: string,
+    phonemeAlignment: DigitalHumanPhonemeAlignmentProfile
+  ) => void;
   onInsertDigitalHumanClip: (params: {
     insertAt: DigitalHumanInsertTarget;
     config: DigitalHumanClipConfig;
@@ -124,6 +138,7 @@ interface DigitalHumanTabProps {
       text: string;
       baseVoice: VoiceoverVoice;
       clonedVoiceId?: string;
+      phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
     };
   }) => void;
   brief?: string;
@@ -241,6 +256,7 @@ export function DigitalHumanTab({
   onBatchApplyDigitalHumanActions,
   onUpdateClipDigitalHumanEmotion,
   onUpdateClipDigitalHumanCameraMotion,
+  onUpdateClipDigitalHumanPhonemeAlignment,
   onInsertDigitalHumanClip,
   brief = '',
 }: DigitalHumanTabProps) {
@@ -287,6 +303,22 @@ export function DigitalHumanTab({
     text: string;
   } | null>(null);
   const [isPreviewingMiniStage, setIsPreviewingMiniStage] = useState(false);
+
+  // Multilingual Voice Synthesis & Voice Cloning State
+  const [multilingualEnabled, setMultilingualEnabled] = useState<boolean>(
+    Boolean(selectedClip?.digitalHuman?.targetLanguage)
+  );
+  const [targetLanguage, setTargetLanguage] = useState<DigitalHumanTargetLanguage>(
+    selectedClip?.digitalHuman?.targetLanguage ?? 'en-US'
+  );
+  const [synthesizingMultilingual, setSynthesizingMultilingual] = useState(false);
+  const [multilingualResult, setMultilingualResult] =
+    useState<DigitalHumanMultilingualResult | null>(null);
+  const [editableTranslatedScript, setEditableTranslatedScript] = useState<string>(
+    selectedClip?.digitalHuman?.translatedScript ?? ''
+  );
+  const [applyTranslatedToCaption, setApplyTranslatedToCaption] = useState<boolean>(true);
+  const [multilingualError, setMultilingualError] = useState<string | null>(null);
 
   // Action Template Library & Auto Action Suggestion State
   const [selectedAction, setSelectedAction] = useState<DigitalHumanActionId>(
@@ -337,6 +369,27 @@ export function DigitalHumanTab({
     )
   );
   const [cameraNotice, setCameraNotice] = useState<string | null>(null);
+
+  // Precise Mel-Spectrum Phoneme Alignment State
+  const [phonemeAlignEnabled, setPhonemeAlignEnabled] = useState<boolean>(
+    selectedClip?.digitalHuman?.phonemeAlignment?.enabled ??
+      digitalHumans[0]?.defaultPhonemeAlignmentEnabled ??
+      true
+  );
+  const [phonemeOffsetMs, setPhonemeOffsetMs] = useState<number>(
+    selectedClip?.digitalHuman?.phonemeAlignment?.keyframeOffsetMs ??
+      digitalHumans[0]?.defaultPhonemeOffsetMs ??
+      -12
+  );
+  const [phonemeOnsetAdvanceMs, setPhonemeOnsetAdvanceMs] = useState<number>(
+    selectedClip?.digitalHuman?.phonemeAlignment?.onsetAdvanceMs ?? 20
+  );
+  const [phonemeAlignment, setPhonemeAlignment] =
+    useState<DigitalHumanPhonemeAlignmentProfile | null>(
+      selectedClip?.digitalHuman?.phonemeAlignment ?? null
+    );
+  const [analyzingPhonemes, setAnalyzingPhonemes] = useState<boolean>(false);
+  const [phonemeNotice, setPhonemeNotice] = useState<string | null>(null);
 
   // Video Track Embedding State
   const [embedMode, setEmbedMode] = useState<'pip-overlay' | 'full-scene'>(
@@ -419,6 +472,19 @@ export function DigitalHumanTab({
         setCameraMotion(clampCameraMotion(selectedClip.digitalHuman.cameraMotion));
       } else {
         setCameraMotion(getDigitalHumanCameraPreset('none').motion);
+      }
+      if (selectedClip.digitalHuman.targetLanguage) {
+        setMultilingualEnabled(true);
+        setTargetLanguage(selectedClip.digitalHuman.targetLanguage);
+      }
+      if (selectedClip.digitalHuman.translatedScript) {
+        setEditableTranslatedScript(selectedClip.digitalHuman.translatedScript);
+      }
+      if (selectedClip.digitalHuman.phonemeAlignment) {
+        setPhonemeAlignment(selectedClip.digitalHuman.phonemeAlignment);
+        setPhonemeAlignEnabled(selectedClip.digitalHuman.phonemeAlignment.enabled);
+        setPhonemeOffsetMs(selectedClip.digitalHuman.phonemeAlignment.keyframeOffsetMs);
+        setPhonemeOnsetAdvanceMs(selectedClip.digitalHuman.phonemeAlignment.onsetAdvanceMs);
       }
     }
   }, [selectedClip?.id, selectedClip?.digitalHuman]);
@@ -513,6 +579,13 @@ export function DigitalHumanTab({
             }
           }
 
+          const activeAudioSampleTime =
+            isPreviewingMiniStage &&
+            previewAudioRef.current &&
+            !previewAudioRef.current.paused
+              ? previewAudioRef.current.currentTime
+              : undefined;
+
           renderDigitalHumanMiniStage(
             ctx,
             canvas.width,
@@ -526,7 +599,9 @@ export function DigitalHumanTab({
             emotionMatchEnabled ? facialMuscles : undefined,
             cameraMotion,
             blendFrom,
-            blendW
+            blendW,
+            phonemeAlignEnabled ? phonemeAlignment ?? undefined : undefined,
+            activeAudioSampleTime
           );
         }
       }
@@ -534,7 +609,17 @@ export function DigitalHumanTab({
     };
     rafId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(rafId);
-  }, [activeAnchor, isPreviewingMiniStage, selectedAction, emotionMatchEnabled, selectedEmotion, facialMuscles, cameraMotion]);
+  }, [
+    activeAnchor,
+    isPreviewingMiniStage,
+    selectedAction,
+    emotionMatchEnabled,
+    selectedEmotion,
+    facialMuscles,
+    cameraMotion,
+    phonemeAlignEnabled,
+    phonemeAlignment,
+  ]);
 
   const handleUploadAnchorMaterial = async (file: File) => {
     setCloneMessage(null);
@@ -614,6 +699,9 @@ export function DigitalHumanTab({
           if (emotionMatchEnabled) {
             void handleAnalyzeVoiceEmotion(b64, payload.mimeType, scriptText.trim());
           }
+          if (phonemeAlignEnabled) {
+            void runClientPhonemeAnalysis(b64, payload.mimeType);
+          }
         } catch {
           setVoiceRecordError('录音保存失败，请重试。');
         }
@@ -664,6 +752,9 @@ export function DigitalHumanTab({
       setDriveMode('recorded-audio');
       if (emotionMatchEnabled) {
         void handleAnalyzeVoiceEmotion(b64, payload.mimeType, scriptText.trim());
+      }
+      if (phonemeAlignEnabled) {
+        void runClientPhonemeAnalysis(b64, payload.mimeType);
       }
     } catch {
       setVoiceRecordError('音频文件读取失败，请检查文件格式。');
@@ -762,6 +853,8 @@ export function DigitalHumanTab({
       defaultEmotion: selectedEmotion,
       defaultFacialMuscles: facialMuscles,
       defaultCameraMotion: cameraMotion,
+      defaultPhonemeAlignmentEnabled: phonemeAlignEnabled,
+      defaultPhonemeOffsetMs: phonemeOffsetMs,
     };
 
     onSaveDigitalHuman(newProfile);
@@ -800,6 +893,41 @@ export function DigitalHumanTab({
     setIsPreviewingMiniStage(false);
   };
 
+  const syncPhonemeAlignmentToSelectedClip = (
+    nextProfile: DigitalHumanPhonemeAlignmentProfile
+  ) => {
+    if (selectedClip?.digitalHuman && onUpdateClipDigitalHumanPhonemeAlignment) {
+      onUpdateClipDigitalHumanPhonemeAlignment(selectedClip.id, nextProfile);
+    }
+  };
+
+  const runClientPhonemeAnalysis = async (
+    audioBase64: string,
+    mimeType = 'audio/wav',
+    overrideOffsetMs = phonemeOffsetMs,
+    overrideOnsetMs = phonemeOnsetAdvanceMs,
+    overrideEnabled = phonemeAlignEnabled
+  ) => {
+    setAnalyzingPhonemes(true);
+    try {
+      const profile = await analyzeAudioForPhonemeAlignment(audioBase64, mimeType, {
+        enabled: overrideEnabled,
+        keyframeOffsetMs: overrideOffsetMs,
+        onsetAdvanceMs: overrideOnsetMs,
+      });
+      if (profile) {
+        setPhonemeAlignment(profile);
+        setPhonemeNotice(profile.spectralSummary);
+        syncPhonemeAlignmentToSelectedClip(profile);
+      }
+      return profile;
+    } catch {
+      return null;
+    } finally {
+      setAnalyzingPhonemes(false);
+    }
+  };
+
   const handleSynthesizeAnchorSpeech = async () => {
     if (!activeAnchor || !scriptText.trim()) return;
     setDrivingSpeech(true);
@@ -821,6 +949,9 @@ export function DigitalHumanTab({
             : activeAnchor.voiceDesignPrompt,
           expressiveness: boundClone?.expressiveness ?? 0.78,
           platform,
+          phonemeAlignmentEnabled: phonemeAlignEnabled,
+          phonemeKeyframeOffsetMs: phonemeOffsetMs,
+          phonemeOnsetAdvanceMs: phonemeOnsetAdvanceMs,
         }),
       });
       const data = await res.json();
@@ -837,6 +968,14 @@ export function DigitalHumanTab({
         text: scriptText.trim(),
       });
       setFullClipDuration(Number(Math.max(2, dur + 0.2).toFixed(1)));
+      if (data.phonemeAlignment) {
+        const aligned = data.phonemeAlignment as DigitalHumanPhonemeAlignmentProfile;
+        setPhonemeAlignment(aligned);
+        setPhonemeNotice(aligned.spectralSummary);
+        syncPhonemeAlignmentToSelectedClip(aligned);
+      } else if (phonemeAlignEnabled) {
+        void runClientPhonemeAnalysis(data.audioBase64, mime);
+      }
       playAudioSnippet(data.audioBase64, mime);
       if (emotionMatchEnabled) {
         void handleAnalyzeVoiceEmotion(data.audioBase64, mime, scriptText.trim());
@@ -845,6 +984,128 @@ export function DigitalHumanTab({
       setDriveError(err instanceof Error ? err.message : '数字人语音驱动失败。');
     } finally {
       setDrivingSpeech(false);
+    }
+  };
+
+  const handleSynthesizeMultilingualDub = async (useEditedTranslation = false) => {
+    if (!activeAnchor) return;
+
+    let rawSource = scriptText.trim() || drivenAudio?.text || selectedClip?.digitalHuman?.spokenScript || '';
+    if (!rawSource && selectedClip) {
+      const end = selectedClipStartTime + selectedClip.duration;
+      const matched = subtitles
+        .filter((s) => {
+          const mid = s.startTime + s.duration / 2;
+          return mid >= selectedClipStartTime && mid <= end;
+        })
+        .map((s) => s.text.trim())
+        .filter(Boolean);
+      if (matched.length > 0) {
+        rawSource = matched.join('，');
+      }
+    }
+    if (!rawSource && subtitles[0]?.text) {
+      rawSource = subtitles[0].text.trim();
+    }
+
+    if (!rawSource && !(useEditedTranslation && editableTranslatedScript.trim())) {
+      setMultilingualError('请先输入或导入现有数字人语音脚本，再执行多语言翻译与声线克隆配音。');
+      return;
+    }
+
+    setSynthesizingMultilingual(true);
+    setMultilingualError(null);
+
+    const boundClone = activeAnchor.clonedVoiceId
+      ? clonedVoices.find((v) => v.id === activeAnchor.clonedVoiceId)
+      : undefined;
+    const referenceAudioBase64 =
+      recordedVoice?.base64 ?? activeAnchor.sampleAudioBase64 ?? boundClone?.samplePreviewBase64;
+    const referenceAudioMimeType =
+      recordedVoice?.mimeType ??
+      activeAnchor.sampleAudioMimeType ??
+      boundClone?.samplePreviewMimeType ??
+      'audio/wav';
+
+    try {
+      const res = await fetch('/api/digital-human/multilingual-dub', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          anchorName: activeAnchor.name,
+          sourceScript: rawSource,
+          preTranslatedScript: useEditedTranslation ? editableTranslatedScript.trim() : '',
+          targetLanguage,
+          baseVoice: boundClone ? boundClone.baseVoice : activeAnchor.baseVoice,
+          voiceDesignPrompt: boundClone
+            ? boundClone.voiceDesignPrompt
+            : activeAnchor.voiceDesignPrompt,
+          clonedVoice: boundClone ?? null,
+          referenceAudioBase64,
+          referenceAudioMimeType,
+          expressiveness: boundClone?.expressiveness ?? 0.78,
+          platform,
+          phonemeAlignmentEnabled: phonemeAlignEnabled,
+          phonemeKeyframeOffsetMs: phonemeOffsetMs,
+          phonemeOnsetAdvanceMs: phonemeOnsetAdvanceMs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.audioBase64) {
+        throw new Error(data?.error || '多语言声线克隆配音合成失败，请重试。');
+      }
+
+      const alignedProfile =
+        (data.phonemeAlignment as DigitalHumanPhonemeAlignmentProfile | undefined) ?? undefined;
+
+      const result: DigitalHumanMultilingualResult = {
+        sourceScript: data.sourceScript || rawSource,
+        translatedScript: data.translatedScript || rawSource,
+        targetLanguage: (data.targetLanguage || targetLanguage) as DigitalHumanTargetLanguage,
+        targetLanguageLabel:
+          data.targetLanguageLabel || getDigitalHumanLanguageOption(targetLanguage).label,
+        voiceCloneSummary:
+          data.voiceCloneSummary || `已保留「${activeAnchor.name}」声线特征并合成目标语种配音。`,
+        baseVoice: (data.baseVoice || activeAnchor.baseVoice) as VoiceoverVoice,
+        clonedStylePrompt: data.clonedStylePrompt || '',
+        audioBase64: data.audioBase64,
+        mimeType: data.mimeType || 'audio/wav',
+        audioDurationSec: Number(data.audioDurationSec || 3.2),
+        modelUsed: data.modelUsed,
+        phonemeAlignment: alignedProfile,
+      };
+
+      setMultilingualEnabled(true);
+      setMultilingualResult(result);
+      setEditableTranslatedScript(result.translatedScript);
+      setDrivenAudio({
+        audioBase64: result.audioBase64,
+        mimeType: result.mimeType,
+        durationSec: result.audioDurationSec,
+        text: applyTranslatedToCaption ? result.translatedScript : result.sourceScript,
+      });
+      setFullClipDuration(Number(Math.max(2, result.audioDurationSec + 0.2).toFixed(1)));
+      if (alignedProfile) {
+        setPhonemeAlignment(alignedProfile);
+        setPhonemeNotice(alignedProfile.spectralSummary);
+        syncPhonemeAlignmentToSelectedClip(alignedProfile);
+      } else if (phonemeAlignEnabled) {
+        void runClientPhonemeAnalysis(result.audioBase64, result.mimeType);
+      }
+      playAudioSnippet(result.audioBase64, result.mimeType);
+      if (emotionMatchEnabled) {
+        void handleAnalyzeVoiceEmotion(
+          result.audioBase64,
+          result.mimeType,
+          result.translatedScript
+        );
+      }
+    } catch (err: unknown) {
+      setMultilingualError(
+        err instanceof Error ? err.message : '多语言语音合成失败，请稍后重试。'
+      );
+    } finally {
+      setSynthesizingMultilingual(false);
     }
   };
 
@@ -874,8 +1135,110 @@ export function DigitalHumanTab({
     emotionSummary: emotionAnalysis?.toneSummary,
     cameraMotion,
     spokenScript: scriptText.trim() || undefined,
+    targetLanguage: multilingualEnabled ? targetLanguage : undefined,
+    translatedScript: multilingualEnabled
+      ? editableTranslatedScript.trim() || multilingualResult?.translatedScript || undefined
+      : undefined,
+    phonemeAlignment: phonemeAlignment
+      ? { ...phonemeAlignment, enabled: phonemeAlignEnabled }
+      : phonemeAlignEnabled
+        ? {
+            enabled: true,
+            fps: 30,
+            melBands: 24,
+            keyframeOffsetMs: phonemeOffsetMs,
+            onsetAdvanceMs: phonemeOnsetAdvanceMs,
+            dominantVisemes: ['aa', 'eh', 'iy'],
+            spectralSummary: '已开启精准音素对齐，将在下次语音合成或重分析时生成完整梅尔频谱关键帧。',
+            formantCentroidHz: 1120,
+            frames: [],
+            analyzedAt: new Date().toISOString(),
+          }
+        : undefined,
     accentColor: activeAnchor.accentColor || '#fb7185',
   });
+
+  const handleTogglePhonemeAlign = () => {
+    const nextEnabled = !phonemeAlignEnabled;
+    setPhonemeAlignEnabled(nextEnabled);
+    if (phonemeAlignment) {
+      const updated = realignPhonemeProfileOffset(
+        phonemeAlignment,
+        phonemeOffsetMs,
+        phonemeOnsetAdvanceMs,
+        nextEnabled
+      );
+      setPhonemeAlignment(updated);
+      setPhonemeNotice(
+        nextEnabled
+          ? `已启用精准音素对齐（关键帧偏移 ${phonemeOffsetMs >= 0 ? '+' : ''}${phonemeOffsetMs}ms）。`
+          : '已切换为标准声能脉冲口型驱动。'
+      );
+      syncPhonemeAlignmentToSelectedClip(updated);
+    } else if (nextEnabled && drivenAudio?.audioBase64) {
+      void runClientPhonemeAnalysis(
+        drivenAudio.audioBase64,
+        drivenAudio.mimeType,
+        phonemeOffsetMs,
+        phonemeOnsetAdvanceMs,
+        true
+      );
+    } else {
+      setPhonemeNotice(
+        nextEnabled
+          ? '已启用精准音素对齐：语音合成与录音时将自动提取 24-band 梅尔频谱口型关键帧。'
+          : '已切换为标准声能脉冲口型驱动。'
+      );
+    }
+  };
+
+  const handlePhonemeOffsetChange = (nextOffsetMs: number) => {
+    const clamped = Math.max(-45, Math.min(45, Math.round(nextOffsetMs)));
+    setPhonemeOffsetMs(clamped);
+    if (phonemeAlignment) {
+      const updated = realignPhonemeProfileOffset(
+        phonemeAlignment,
+        clamped,
+        phonemeOnsetAdvanceMs,
+        phonemeAlignEnabled
+      );
+      setPhonemeAlignment(updated);
+      syncPhonemeAlignmentToSelectedClip(updated);
+    }
+  };
+
+  const handlePhonemeOnsetAdvanceChange = (nextOnsetMs: number) => {
+    const clamped = Math.max(0, Math.min(35, Math.round(nextOnsetMs)));
+    setPhonemeOnsetAdvanceMs(clamped);
+    if (phonemeAlignment) {
+      const updated = realignPhonemeProfileOffset(
+        phonemeAlignment,
+        phonemeOffsetMs,
+        clamped,
+        phonemeAlignEnabled
+      );
+      setPhonemeAlignment(updated);
+      syncPhonemeAlignmentToSelectedClip(updated);
+    }
+  };
+
+  const handleCalibratePhonemesFromCurrentAudio = async () => {
+    const b64 =
+      drivenAudio?.audioBase64 ??
+      recordedVoice?.base64 ??
+      activeAnchor?.sampleAudioBase64;
+    const mime =
+      drivenAudio?.mimeType ??
+      recordedVoice?.mimeType ??
+      activeAnchor?.sampleAudioMimeType ??
+      'audio/wav';
+    if (!b64) {
+      setPhonemeNotice('请先合成数字人台词、多语言配音或录制/导入音频，再执行梅尔频谱音素对齐分析。');
+      return;
+    }
+    setPhonemeAlignEnabled(true);
+    await runClientPhonemeAnalysis(b64, mime, phonemeOffsetMs, phonemeOnsetAdvanceMs, true);
+  };
 
   const syncCameraMotionToSelectedClip = (next: DigitalHumanCameraMotion) => {
     if (selectedClip?.digitalHuman && onUpdateClipDigitalHumanCameraMotion) {
@@ -1173,6 +1536,9 @@ export function DigitalHumanTab({
           text: drivenAudio.text || scriptText.trim() || activeAnchor.name,
           baseVoice: activeAnchor.baseVoice,
           clonedVoiceId: activeAnchor.clonedVoiceId,
+          phonemeAlignment: phonemeAlignment
+            ? { ...phonemeAlignment, enabled: phonemeAlignEnabled }
+            : undefined,
         }
       : undefined;
 
@@ -2299,6 +2665,178 @@ export function DigitalHumanTab({
           )}
         </div>
 
+        {/* Precise Mel-Spectrum Phoneme Alignment Card */}
+        <div
+          id="dh-phoneme-alignment-card"
+          className="rounded-lg border border-emerald-500/25 bg-[#12171D] p-2.5 space-y-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <AudioLines className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-[11px] font-medium text-emerald-200">
+                精准音素对齐（梅尔频谱口型增强）
+              </span>
+            </div>
+            <button
+              id="dh-phoneme-align-toggle"
+              type="button"
+              role="switch"
+              aria-label="精准音素对齐"
+              aria-checked={phonemeAlignEnabled}
+              onClick={handleTogglePhonemeAlign}
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                phonemeAlignEnabled ? 'bg-emerald-500' : 'bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  phonemeAlignEnabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
+          <p className="text-[10px] text-zinc-400 leading-relaxed">
+            在语音合成与配音时分析音频 24-band 梅尔频谱能量与质心特征，自动识别 <span className="text-emerald-300">AA / IY / OO / SZ</span> 音素视位并微调嘴部开合关键帧偏移。
+          </p>
+
+          {phonemeAlignEnabled && (
+            <div className="space-y-2 pt-0.5">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded border border-zinc-800 bg-[#0D1016] px-2 py-1.5 space-y-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-300">关键帧时间偏移</span>
+                    <span className="font-mono text-emerald-300">
+                      {phonemeOffsetMs >= 0 ? `+${phonemeOffsetMs}` : phonemeOffsetMs} ms
+                    </span>
+                  </div>
+                  <input
+                    id="dh-phoneme-offset-slider"
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={1}
+                    value={phonemeOffsetMs}
+                    onChange={(e) => handlePhonemeOffsetChange(Number(e.target.value))}
+                    className="w-full accent-emerald-400"
+                  />
+                  <div className="flex items-center justify-between text-[9px] text-zinc-500">
+                    <span>超前 -45ms</span>
+                    <span>滞后 +45ms</span>
+                  </div>
+                </div>
+
+                <div className="rounded border border-zinc-800 bg-[#0D1016] px-2 py-1.5 space-y-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-300">协同提前张口</span>
+                    <span className="font-mono text-emerald-300">+{phonemeOnsetAdvanceMs} ms</span>
+                  </div>
+                  <input
+                    id="dh-phoneme-onset-slider"
+                    type="range"
+                    min={0}
+                    max={35}
+                    step={1}
+                    value={phonemeOnsetAdvanceMs}
+                    onChange={(e) => handlePhonemeOnsetAdvanceChange(Number(e.target.value))}
+                    className="w-full accent-emerald-400"
+                  />
+                  <div className="flex items-center justify-between text-[9px] text-zinc-500">
+                    <span>0ms 零提前</span>
+                    <span>35ms 强协同</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                id="dh-phoneme-reanalyze-btn"
+                type="button"
+                disabled={analyzingPhonemes}
+                onClick={handleCalibratePhonemesFromCurrentAudio}
+                className="w-full py-1.5 px-2.5 rounded border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-50 text-[10px] font-medium text-emerald-100 flex items-center justify-center gap-1.5 transition-colors"
+              >
+                {analyzingPhonemes ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    正在分析音频梅尔频谱特征...
+                  </>
+                ) : (
+                  <>
+                    <Sliders className="w-3 h-3" />
+                    重新分析音轨梅尔频谱并校准关键帧
+                  </>
+                )}
+              </button>
+
+              {phonemeAlignment && phonemeAlignment.frames.length > 0 && (
+                <div className="rounded border border-emerald-500/30 bg-emerald-950/20 p-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="font-medium text-emerald-200">
+                      梅尔频谱音素曲线 · {phonemeAlignment.frames.length} 关键帧
+                    </span>
+                    <span className="font-mono text-[9px] text-emerald-300">
+                      {phonemeAlignment.melBands} Mel-Bands / {phonemeAlignment.fps}fps
+                    </span>
+                  </div>
+
+                  {/* Dominant Viseme Badges */}
+                  <div className="flex flex-wrap gap-1">
+                    {phonemeAlignment.dominantVisemes.map((v) => {
+                      const meta = getVisemeDisplayMeta(v);
+                      return (
+                        <span
+                          key={v}
+                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-mono border border-emerald-500/30 bg-[#0D1016] text-emerald-100"
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: meta.badgeColor }}
+                          />
+                          {meta.shortTag} · {meta.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+
+                  {/* Compact Jaw-Open Envelope Visualizer */}
+                  <div
+                    className="h-7 rounded bg-[#0B0E14] border border-zinc-800/80 px-1 py-0.5 flex items-end gap-[1.5px] overflow-hidden"
+                    title="梅尔频谱口型开合与音素关键帧波形"
+                  >
+                    {(() => {
+                      const frames = phonemeAlignment.frames;
+                      const step = Math.max(1, Math.floor(frames.length / 48));
+                      const sampled = frames.filter((_, idx) => idx % step === 0).slice(0, 48);
+                      return sampled.map((frame, idx) => {
+                        const meta = getVisemeDisplayMeta(frame.viseme);
+                        const hPct = Math.max(12, Math.round(frame.jawOpen * 100));
+                        return (
+                          <div
+                            key={`${idx}-${frame.t}`}
+                            className="flex-1 rounded-t-[1px] transition-all"
+                            style={{
+                              height: `${hPct}%`,
+                              backgroundColor: meta.badgeColor,
+                              opacity: 0.55 + Math.min(0.45, frame.jawOpen * 0.45),
+                            }}
+                            title={`${frame.t.toFixed(2)}s · ${meta.shortTag}(${meta.label}) · 张口 ${Math.round(frame.jawOpen * 100)}% · 偏移 ${frame.keyframeOffsetMs >= 0 ? '+' : ''}${frame.keyframeOffsetMs}ms`}
+                          />
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {phonemeNotice && (
+                <div className="rounded border border-emerald-500/30 bg-emerald-950/20 px-2 py-1 text-[10px] text-emerald-200 leading-snug">
+                  {phonemeNotice}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Drive Mode Switch */}
         <div className="grid grid-cols-2 gap-1.5">
           <button
@@ -2441,6 +2979,213 @@ export function DigitalHumanTab({
             </button>
           </div>
         )}
+
+        {/* Multilingual Voice Synthesis (Script Translation + Cross-Lingual Voice Cloning) */}
+        <div className="rounded-lg border border-indigo-500/30 bg-[#11141B] p-2.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[11px] font-semibold text-indigo-200 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>多语言语音合成（声线克隆配音）</span>
+              </span>
+              <span className="block text-[10px] text-zinc-400 mt-0.5">
+                AI 自动翻译现有脚本并克隆原声线特征生成目标语种配音
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={multilingualEnabled}
+              aria-label="多语言语音合成"
+              onClick={() => setMultilingualEnabled((v) => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
+                multilingualEnabled
+                  ? 'bg-indigo-500 border-indigo-400'
+                  : 'bg-zinc-800 border-zinc-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  multilingualEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
+          {multilingualEnabled && (() => {
+            const boundClone = activeAnchor?.clonedVoiceId
+              ? clonedVoices.find((v) => v.id === activeAnchor.clonedVoiceId)
+              : undefined;
+            const voiceRefLabel = recordedVoice
+              ? '个人录制原声纹'
+              : boundClone
+                ? `克隆音色 · ${boundClone.name}`
+                : activeAnchor?.sampleAudioBase64
+                  ? `${activeAnchor.name} 原声采样`
+                  : `${activeAnchor?.name || '主播'} (${activeAnchor?.baseVoice || 'Kore'})`;
+            const selectedLangMeta = getDigitalHumanLanguageOption(targetLanguage);
+
+            return (
+              <div className="space-y-2.5 pt-1.5 border-t border-zinc-800/80">
+                <div className="flex items-center justify-between gap-2 text-[10px]">
+                  <span className="text-zinc-400">选择目标语种</span>
+                  <span className="text-indigo-300 font-medium truncate max-w-[180px]" title={voiceRefLabel}>
+                    声线克隆参考：{voiceRefLabel}
+                  </span>
+                </div>
+
+                <div
+                  className="grid grid-cols-3 gap-1"
+                  role="radiogroup"
+                  aria-label="目标语种"
+                >
+                  {DIGITAL_HUMAN_LANGUAGES.map((lang) => {
+                    const isSel = targetLanguage === lang.id;
+                    return (
+                      <button
+                        key={lang.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSel}
+                        onClick={() => setTargetLanguage(lang.id)}
+                        className={`px-2 py-1.5 rounded-md border text-left transition-colors ${
+                          isSel
+                            ? 'border-indigo-400 bg-indigo-500/20 text-indigo-100'
+                            : 'border-zinc-800 bg-[#0B0D10] text-zinc-300 hover:border-zinc-600'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-semibold truncate">{lang.label}</span>
+                          <span className="text-[8px] font-mono-nums text-indigo-300 shrink-0">
+                            {lang.shortTag}
+                          </span>
+                        </div>
+                        <span className="block text-[9px] text-zinc-400 truncate">
+                          {lang.nativeName}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="flex items-center gap-2 text-[10px] text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={applyTranslatedToCaption}
+                    onChange={(e) => setApplyTranslatedToCaption(e.target.checked)}
+                    className="accent-indigo-500"
+                  />
+                  <span>将「{selectedLangMeta.label}」译文同步设为数字人驱动字幕文案</span>
+                </label>
+
+                <button
+                  type="button"
+                  disabled={synthesizingMultilingual}
+                  onClick={() => void handleSynthesizeMultilingualDub(false)}
+                  className="w-full py-2 px-3 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {synthesizingMultilingual ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>正在翻译并克隆声线合成{selectedLangMeta.label}配音...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Languages className="w-3.5 h-3.5" />
+                      <span>AI 翻译脚本并克隆声线合成 ({selectedLangMeta.label})</span>
+                    </>
+                  )}
+                </button>
+
+                {multilingualError && (
+                  <div className="rounded border border-red-500/40 bg-red-950/30 p-2 text-[10px] text-red-200 leading-snug">
+                    {multilingualError}
+                  </div>
+                )}
+
+                {multilingualResult && (
+                  <div className="rounded-md border border-indigo-500/40 bg-indigo-950/25 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-indigo-200 truncate">
+                        {multilingualResult.targetLanguageLabel}克隆配音就绪 ·{' '}
+                        {multilingualResult.audioDurationSec.toFixed(1)}s
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          isPreviewingMiniStage
+                            ? stopPreviewAudio()
+                            : playAudioSnippet(
+                                multilingualResult.audioBase64,
+                                multilingualResult.mimeType
+                              )
+                        }
+                        className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-[10px] font-semibold text-white flex items-center gap-1 shrink-0"
+                      >
+                        {isPreviewingMiniStage ? (
+                          <>
+                            <Square className="w-2.5 h-2.5 fill-current" />
+                            <span>停止</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-2.5 h-2.5" />
+                            <span>试听多语言配音</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <p className="text-[10px] text-indigo-200/85 leading-snug">
+                      声线特征继承：{multilingualResult.voiceCloneSummary}
+                    </p>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                        <span>译文台词预览（支持微调重合成）</span>
+                        <span className="font-mono-nums text-indigo-300">
+                          {multilingualResult.baseVoice}
+                        </span>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={editableTranslatedScript}
+                        onChange={(e) => setEditableTranslatedScript(e.target.value)}
+                        className="w-full rounded bg-[#0B0D10] border border-zinc-800 px-2 py-1.5 text-[11px] text-zinc-100 focus:outline-none focus:border-indigo-400 resize-none"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={synthesizingMultilingual || !editableTranslatedScript.trim()}
+                          onClick={() => void handleSynthesizeMultilingualDub(true)}
+                          className="flex-1 py-1 px-2 rounded border border-indigo-500/45 bg-indigo-500/15 hover:bg-indigo-500/25 disabled:opacity-45 text-[10px] font-medium text-indigo-200 transition-colors"
+                        >
+                          按修改后译文重合成
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!editableTranslatedScript.trim()}
+                          onClick={() => {
+                            setScriptText(editableTranslatedScript.trim());
+                            if (drivenAudio) {
+                              setDrivenAudio({
+                                ...drivenAudio,
+                                text: editableTranslatedScript.trim(),
+                              });
+                            }
+                          }}
+                          className="py-1 px-2 rounded border border-zinc-700 bg-[#0B0D10] hover:bg-zinc-800 disabled:opacity-45 text-[10px] text-zinc-300 transition-colors"
+                        >
+                          填入台词框
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {/* 3. Embed into Video Track for Seamless Mixed Editing */}

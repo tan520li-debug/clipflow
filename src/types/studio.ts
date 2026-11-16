@@ -215,6 +215,64 @@ export interface DigitalHumanActionRecommendation {
   analyzedAt: string;
 }
 
+export type DigitalHumanTargetLanguage =
+  | 'zh-CN'
+  | 'en-US'
+  | 'ja-JP'
+  | 'ko-KR'
+  | 'es-ES'
+  | 'fr-FR'
+  | 'de-DE'
+  | 'pt-BR'
+  | 'ar-SA';
+
+export type DigitalHumanVisemeClass =
+  | 'sil'
+  | 'aa'
+  | 'eh'
+  | 'iy'
+  | 'oh'
+  | 'oo'
+  | 'fv'
+  | 'sz';
+
+export interface DigitalHumanPhonemeFrame {
+  t: number; // keyframe timestamp (seconds) after anticipatory & global micro-offset
+  viseme: DigitalHumanVisemeClass;
+  jawOpen: number; // 0.0 to 1.0 calibrated mouth vertical opening
+  mouthWidth: number; // 0.65 to 1.35 lateral lip spread/roundness
+  pucker: number; // 0.0 to 1.0 lip rounding
+  keyframeOffsetMs: number; // applied keyframe offset at this frame (-65 to +65 ms)
+}
+
+export interface DigitalHumanPhonemeAlignmentProfile {
+  enabled: boolean;
+  fps: number; // ~30 fps mel-spectral frame rate
+  melBands: number; // 24 triangular mel filterbank bands
+  keyframeOffsetMs: number; // user-tunable lip-sync keyframe timing offset (-45 to +45 ms)
+  onsetAdvanceMs: number; // anticipatory co-articulation lead before vowel/plosive burst (0 to 35 ms)
+  dominantVisemes: DigitalHumanVisemeClass[];
+  spectralSummary: string;
+  formantCentroidHz: number;
+  frames: DigitalHumanPhonemeFrame[];
+  analyzedAt: string;
+}
+
+export interface DigitalHumanMultilingualResult {
+  sourceScript: string;
+  translatedScript: string;
+  targetLanguage: DigitalHumanTargetLanguage;
+  targetLanguageLabel: string;
+  voiceCloneSummary: string;
+  baseVoice: VoiceoverVoice;
+  clonedStylePrompt: string;
+  audioBase64: string;
+  mimeType: string;
+  audioDurationSec: number;
+  modelUsed?: string;
+  phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
+}
+
 export interface DigitalHumanProfile {
   id: string;
   name: string;
@@ -236,6 +294,8 @@ export interface DigitalHumanProfile {
   defaultEmotion?: DigitalHumanEmotionId;
   defaultFacialMuscles?: DigitalHumanFacialMuscles;
   defaultCameraMotion?: DigitalHumanCameraMotion;
+  defaultPhonemeAlignmentEnabled?: boolean;
+  defaultPhonemeOffsetMs?: number;
 }
 
 export interface DigitalHumanClipConfig {
@@ -259,7 +319,10 @@ export interface DigitalHumanClipConfig {
   facialMuscles?: DigitalHumanFacialMuscles;
   emotionSummary?: string;
   cameraMotion?: DigitalHumanCameraMotion;
+  phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
   spokenScript?: string;
+  targetLanguage?: DigitalHumanTargetLanguage;
+  translatedScript?: string;
   linkedCueId?: string;
   accentColor?: string;
 }
@@ -338,6 +401,7 @@ export interface VoiceoverCue {
   eqMidGainDb?: number;
   eqHighGainDb?: number;
   audioDurationSec?: number;
+  phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
 }
 
 export interface VoiceDenoiseProfile {

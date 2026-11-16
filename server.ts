@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
+import { extractMelPhonemeAlignmentFromPcm } from './src/utils/digitalHumanAssets.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +13,240 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '16mb' }));
+
+// ============================================================================
+// Configurable Gemini Models & Public Stable Fallback Chains
+// ============================================================================
+const PUBLIC_STABLE_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-3.1-flash-lite'] as const;
+const PUBLIC_STABLE_TTS_MODELS = ['gemini-2.5-flash-preview-tts', 'gemini-3.8-flash-lite-tts'] as const;
+const PUBLIC_STABLE_TRANSCRIBE_MODELS = [
+  'gemini-3.5-transcribe',
+  'gemini-2.5-flash',
+  'gemini-3.1-flash-lite',
+] as const;
+
+function buildModelCandidates(
+  envValue: string | undefined,
+  fallbacks: readonly string[]
+): string[] {
+  const list: string[] = [];
+  const primary = (envValue || '').trim();
+  if (primary) list.push(primary);
+  for (const fb of fallbacks) {
+    if (fb && !list.includes(fb)) list.push(fb);
+  }
+  return list;
+}
+
+function getTextModelCandidates(): string[] {
+  return buildModelCandidates(process.env.GEMINI_TEXT_MODEL, PUBLIC_STABLE_TEXT_MODELS);
+}
+
+function getTtsModelCandidates(preferLite = false): string[] {
+  const base = buildModelCandidates(process.env.GEMINI_TTS_MODEL, PUBLIC_STABLE_TTS_MODELS);
+  if (preferLite && !(process.env.GEMINI_TTS_MODEL || '').trim()) {
+    return ['gemini-3.8-flash-lite-tts', ...base.filter((m) => m !== 'gemini-3.8-flash-lite-tts')];
+  }
+  return base;
+}
+
+function getTranscribeModelCandidates(): string[] {
+  return buildModelCandidates(
+    process.env.GEMINI_TRANSCRIBE_MODEL || process.env.GEMINI_TEXT_MODEL,
+    PUBLIC_STABLE_TRANSCRIBE_MODELS
+  );
+}
+
+function isQuotaExceededError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes('429') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('Quota exceeded') ||
+    msg.includes('rate-limit')
+  );
+}
+
+function isServiceBusyError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand');
+}
+
+function adaptConfigForModel(
+  modelName: string,
+  config?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!config) return undefined;
+  const supportsThinkingLevel = /^gemini-[34]/.test(modelName);
+  if (supportsThinkingLevel || !('thinkingConfig' in config)) {
+    return config;
+  }
+  const { thinkingConfig: _removed, ...rest } = config;
+  return rest;
+}
+
+async function generateTextContentWithFallback(
+  ai: GoogleGenAI,
+  params: {
+    contents: unknown;
+    config?: Record<string, unknown>;
+  },
+  candidates?: string[]
+) {
+  const modelsToTry = candidates && candidates.length > 0 ? candidates : getTextModelCandidates();
+  let lastErr: unknown = null;
+
+  for (let idx = 0; idx < modelsToTry.length; idx++) {
+    const currentModel = modelsToTry[idx];
+    const adaptedConfig = adaptConfigForModel(currentModel, params.config);
+    try {
+      return await ai.models.generateContent({
+        model: currentModel,
+        contents: params.contents as never,
+        ...(adaptedConfig ? { config: adaptedConfig as never } : {}),
+      });
+    } catch (err: unknown) {
+      lastErr = err;
+      if (isServiceBusyError(err)) {
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+          return await ai.models.generateContent({
+            model: currentModel,
+            contents: params.contents as never,
+            ...(adaptedConfig ? { config: adaptedConfig as never } : {}),
+          });
+        } catch (retryErr: unknown) {
+          lastErr = retryErr;
+        }
+      }
+      if (idx < modelsToTry.length - 1) {
+        console.warn(
+          `[gemini-text] model "${currentModel}" failed; falling back to "${modelsToTry[idx + 1]}"`
+        );
+      }
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error('Text model invocation failed');
+}
+
+// ============================================================================
+// API Authentication & Per-IP Rate Limiting Middleware
+// ============================================================================
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const hashA = crypto.createHash('sha256').update(a, 'utf8').digest();
+  const hashB = crypto.createHash('sha256').update(b, 'utf8').digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
+function apiAuthMiddleware(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  if (req.path === '/health' || req.path === '/health/') {
+    return next();
+  }
+
+  const rawHeader = req.headers['x-clipflow-token'];
+  const providedToken = Array.isArray(rawHeader)
+    ? String(rawHeader[0] ?? '').trim()
+    : typeof rawHeader === 'string'
+      ? rawHeader.trim()
+      : '';
+
+  if (!providedToken) {
+    return res.status(401).json({
+      error: '未提供访问令牌，请在请求头中携带 x-clipflow-token。',
+    });
+  }
+
+  const expectedToken = (process.env.ADMIN_ACCESS_TOKEN || '').trim();
+  if (!expectedToken || !timingSafeStringEqual(providedToken, expectedToken)) {
+    return res.status(401).json({
+      error: '访问令牌无效或未配置，无权访问接口。',
+    });
+  }
+
+  return next();
+}
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const STANDARD_RATE_LIMIT_PER_MIN = 20;
+const STRICT_RATE_LIMIT_PER_MIN = 3;
+
+const STRICT_RATE_LIMIT_PATHS = new Set([
+  '/generate-voiceover',
+  '/voice-clone/train',
+  '/voice-clone/preview',
+  '/digital-human/clone',
+  '/digital-human/drive',
+  '/digital-human/multilingual-dub',
+]);
+
+const ipRateLimitBuckets = new Map<string, number[]>();
+
+function getNormalizedClientIp(req: express.Request): string {
+  const raw = req.ip || req.socket.remoteAddress || 'unknown';
+  return raw.startsWith('::ffff:') ? raw.slice(7) : raw;
+}
+
+function apiRateLimitMiddleware(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  if (req.path === '/health' || req.path === '/health/') {
+    return next();
+  }
+
+  const normalizedPath = req.path.replace(/\/+$/, '') || '/';
+  const isStrictTier = STRICT_RATE_LIMIT_PATHS.has(normalizedPath);
+  const limit = isStrictTier ? STRICT_RATE_LIMIT_PER_MIN : STANDARD_RATE_LIMIT_PER_MIN;
+  const tierKey = isStrictTier ? 'strict' : 'standard';
+  const clientIp = getNormalizedClientIp(req);
+  const bucketKey = `${tierKey}:${clientIp}`;
+
+  const now = Date.now();
+  const cutoff = now - RATE_LIMIT_WINDOW_MS;
+  const existing = ipRateLimitBuckets.get(bucketKey) || [];
+  const recent = existing.filter((ts) => ts > cutoff);
+
+  if (recent.length >= limit) {
+    const oldestTs = recent[0] ?? now;
+    const retryAfterSec = Math.max(1, Math.ceil((oldestTs + RATE_LIMIT_WINDOW_MS - now) / 1000));
+    res.setHeader('Retry-After', String(retryAfterSec));
+    res.setHeader('X-RateLimit-Limit', String(limit));
+    res.setHeader('X-RateLimit-Remaining', '0');
+    res.setHeader('X-RateLimit-Reset', String(Math.ceil((oldestTs + RATE_LIMIT_WINDOW_MS) / 1000)));
+    ipRateLimitBuckets.set(bucketKey, recent);
+    return res.status(429).json({
+      error: isStrictTier
+        ? '语音合成与数字人克隆/驱动接口调用过于频繁（每分钟最多 3 次），请稍后再试。'
+        : '接口请求过于频繁（普通接口每分钟最多 20 次），请稍后再试。',
+    });
+  }
+
+  recent.push(now);
+  ipRateLimitBuckets.set(bucketKey, recent);
+
+  if (ipRateLimitBuckets.size > 2000) {
+    for (const [key, timestamps] of ipRateLimitBuckets.entries()) {
+      const active = timestamps.filter((ts) => ts > cutoff);
+      if (active.length === 0) {
+        ipRateLimitBuckets.delete(key);
+      } else {
+        ipRateLimitBuckets.set(key, active);
+      }
+    }
+  }
+
+  res.setHeader('X-RateLimit-Limit', String(limit));
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, limit - recent.length)));
+  return next();
+}
 
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -32,6 +267,8 @@ function getGeminiClient() {
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, timestamp: new Date().toISOString() });
 });
+
+app.use('/api', apiAuthMiddleware, apiRateLimitMiddleware);
 
 app.post('/api/auto-edit', async (req, res) => {
   try {
@@ -89,12 +326,11 @@ ${mediaListText}
 
 Generate tailored auto-edit timelines and platform copy for each requested platform.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: prompt,
       config: {
         systemInstruction,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -181,9 +417,7 @@ Generate tailored auto-edit timelines and platform copy for each requested platf
     return res.json(parsed);
   } catch (err: unknown) {
     console.error('[api/auto-edit] error:', err);
-    const message =
-      err instanceof Error ? err.message : '自动剪辑规划生成失败，请检查网络或稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '自动剪辑规划生成失败，请稍后重试。' });
   }
 });
 
@@ -238,13 +472,12 @@ Choose the best transition from:
 Respond in Simplified Chinese for transitionName, reason (1-2 concise sentences referencing the actual visual elements, lighting, or composition in the two frames), and visualBridgeNote (short actionable tip).`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts },
       config: {
         systemInstruction:
           'You are a senior short-video film editor. Inspect the two consecutive frames and recommend the smoothest, most visually cohesive transition effect in strict JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -268,9 +501,7 @@ Respond in Simplified Chinese for transitionName, reason (1-2 concise sentences 
     return res.json(parsed);
   } catch (err: unknown) {
     console.error('[api/suggest-transition] error:', err);
-    const message =
-      err instanceof Error ? err.message : 'AI 转场分析失败，请检查网络后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 转场分析失败，请稍后重试。' });
   }
 });
 
@@ -362,13 +593,12 @@ Requirements (Simplified Chinese):
    - retentionReason: concise 10-24 char Chinese explanation linking visual features to retention.`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts },
       config: {
         systemInstruction:
           'You are a viral short-video retention architect and senior editor for Douyin, TikTok, and Facebook Reels. Inspect the full sequence of visual frames and design a non-repetitive, high-retention transition sequence in strict JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -494,9 +724,7 @@ Requirements (Simplified Chinese):
     });
   } catch (err: unknown) {
     console.error('[api/suggest-transition-sequence] error:', err);
-    const message =
-      err instanceof Error ? err.message : '智能转场序列分析失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '智能转场序列分析失败，请稍后重试。' });
   }
 });
 
@@ -549,13 +777,12 @@ Return precise numeric color grading multipliers:
 - analysisNote: 1-2 concise Simplified Chinese sentences explaining the detected tone and why the tuned contrast/saturation/brightness improves feed appeal.`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts },
       config: {
         systemInstruction:
           'You are a senior commercial colorist for Douyin, TikTok, and Facebook Reels. Inspect the frame color temperature and saturation and return balanced, natural-looking color grading multipliers in strict JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -588,9 +815,7 @@ Return precise numeric color grading multipliers:
     return res.json(parsed);
   } catch (err: unknown) {
     console.error('[api/match-color] error:', err);
-    const message =
-      err instanceof Error ? err.message : 'AI 智能色调匹配失败，请检查网络后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 智能色调匹配失败，请稍后重试。' });
   }
 });
 
@@ -604,8 +829,7 @@ app.post('/api/tag-media', async (req, res) => {
 
     const ai = getGeminiClient();
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: {
         parts: [
           {
@@ -625,7 +849,7 @@ app.post('/api/tag-media', async (req, res) => {
       config: {
         systemInstruction:
           'You are a media asset classifier for a video editing studio. Output strict JSON matching the requested Chinese taxonomy.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -654,9 +878,7 @@ app.post('/api/tag-media', async (req, res) => {
     return res.json(parsed);
   } catch (err: unknown) {
     console.error('[api/tag-media] error:', err);
-    const message =
-      err instanceof Error ? err.message : 'AI 素材打标失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 素材打标失败，请稍后重试。' });
   }
 });
 
@@ -712,13 +934,12 @@ Select the best matching BGM preset from these exact IDs:
 Return strict JSON with recommendedPreset, moodLabel (e.g. "律动感", "叙事感", "清新", "悬疑"), presetName (concise Chinese preset name), recommendedBpm (integer 85-140), recommendedVolume (0.50-0.80), reason (1-2 concise Simplified Chinese sentences referencing visual mood & cut tempo), and soundDesignNote (short actionable tip).`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts },
       config: {
         systemInstruction:
           'You are a short-video music supervisor and sound designer. Match the editing pace and visual emotion to the ideal music preset in strict JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -753,9 +974,7 @@ Return strict JSON with recommendedPreset, moodLabel (e.g. "律动感", "叙事�
     return res.json(parsed);
   } catch (err: unknown) {
     console.error('[api/suggest-bgm] error:', err);
-    const message =
-      err instanceof Error ? err.message : 'AI 背景乐分析失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 背景乐分析失败，请稍后重试。' });
   }
 });
 
@@ -777,22 +996,25 @@ app.post('/api/transcribe-subtitles', async (req, res) => {
     let sourceMode: 'speech' | 'visual' = 'speech';
 
     if (typeof audioBase64 === 'string' && audioBase64.length > 0) {
-      const transcribeRes = await ai.models.generateContent({
-        model: 'gemini-3.5-transcribe',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: audioBase64,
+      const transcribeRes = await generateTextContentWithFallback(
+        ai,
+        {
+          contents: {
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: audioBase64,
+                },
               },
-            },
-            {
-              text: 'Transcribe the spoken dialogue or narration accurately in its original language (Simplified Chinese or English). Output only the spoken transcript text.',
-            },
-          ],
+              {
+                text: 'Transcribe the spoken dialogue or narration accurately in its original language (Simplified Chinese or English). Output only the spoken transcript text.',
+              },
+            ],
+          },
         },
-      });
+        getTranscribeModelCandidates()
+      );
       transcript = (transcribeRes.text ?? '').trim();
     } else if (typeof frameBase64 === 'string' && frameBase64.length > 0) {
       sourceMode = 'visual';
@@ -840,13 +1062,12 @@ Rules:
     }
     alignParts.push({ text: alignPrompt });
 
-    const alignRes = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const alignRes = await generateTextContentWithFallback(ai, {
       contents: { parts: alignParts },
       config: {
         systemInstruction:
           'You are a short-video subtitle timing specialist. Convert speech transcripts or scene cues into tightly timed, non-overlapping subtitle segments in strict JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -895,9 +1116,7 @@ Rules:
     });
   } catch (err: unknown) {
     console.error('[api/transcribe-subtitles] error:', err);
-    const message =
-      err instanceof Error ? err.message : 'AI 语音识别生成字幕失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 语音识别生成字幕失败，请稍后重试。' });
   }
 });
 
@@ -983,13 +1202,12 @@ Rules:
 - "volume" must be between 0.45 and 0.95.`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts },
       config: {
         systemInstruction:
           'You are a professional short-video sound designer for Douyin, TikTok, and Facebook Reels. Map timeline transitions, visual actions, and caption cues to precise micro SFX cues in strict JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -1083,28 +1301,11 @@ Rules:
     });
   } catch (err: unknown) {
     console.error('[api/suggest-sfx] error:', err);
-    const message =
-      err instanceof Error ? err.message : 'AI 音效库推荐失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 音效库推荐失败，请稍后重试。' });
   }
 });
 
-let flashTtsQuotaCooldownUntil = 0;
-
-function isQuotaExceededError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return (
-    msg.includes('429') ||
-    msg.includes('RESOURCE_EXHAUSTED') ||
-    msg.includes('Quota exceeded') ||
-    msg.includes('rate-limit')
-  );
-}
-
-function isServiceBusyError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand');
-}
+const ttsModelQuotaCooldownUntil = new Map<string, number>();
 
 function stripScriptTags(text: string): string {
   return text
@@ -1140,31 +1341,86 @@ function getWavDurationSec(base64: string): number | null {
   }
 }
 
+function extractWavMelPhonemeAlignment(
+  base64: string,
+  options?: {
+    enabled?: boolean;
+    keyframeOffsetMs?: number;
+    onsetAdvanceMs?: number;
+  }
+) {
+  try {
+    const clean = base64.includes(',') ? base64.split(',')[1] : base64;
+    const buf = Buffer.from(clean, 'base64');
+    if (buf.length < 44) return undefined;
+    if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+      return undefined;
+    }
+
+    let sampleRate = 24000;
+    let numChannels = 1;
+    let bitsPerSample = 16;
+    let dataOffset = 44;
+    let dataSize = buf.length - 44;
+
+    let offset = 12;
+    while (offset + 8 <= buf.length) {
+      const chunkId = buf.toString('ascii', offset, offset + 4);
+      const chunkSize = buf.readUInt32LE(offset + 4);
+      if (chunkId === 'fmt ') {
+        numChannels = buf.readUInt16LE(offset + 10) || 1;
+        sampleRate = buf.readUInt32LE(offset + 12) || 24000;
+        bitsPerSample = buf.readUInt16LE(offset + 22) || 16;
+      } else if (chunkId === 'data') {
+        dataOffset = offset + 8;
+        dataSize = Math.min(chunkSize, buf.length - dataOffset);
+        break;
+      }
+      offset += 8 + chunkSize + (chunkSize % 2);
+    }
+
+    const bytesPerSample = Math.max(1, bitsPerSample / 8);
+    const totalSamples = Math.floor(dataSize / (bytesPerSample * numChannels));
+    if (totalSamples <= 0) return undefined;
+
+    const pcm = new Float32Array(totalSamples);
+    for (let s = 0; s < totalSamples; s++) {
+      const byteIdx = dataOffset + s * numChannels * bytesPerSample;
+      if (byteIdx + 1 >= buf.length) break;
+      pcm[s] = bitsPerSample === 16 ? buf.readInt16LE(byteIdx) / 32768 : 0;
+    }
+
+    return extractMelPhonemeAlignmentFromPcm(pcm, sampleRate, options);
+  } catch {
+    return undefined;
+  }
+}
+
 async function synthesizeStyledSpeech(
   ai: GoogleGenAI,
   opts: {
-    model: string;
+    preferLite?: boolean;
     voiceName: string;
     spokenText: string;
     stylePrompt?: string;
   }
 ) {
-  const { model, voiceName, spokenText, stylePrompt } = opts;
+  const { preferLite = false, voiceName, spokenText, stylePrompt } = opts;
   const cleanStyle = (stylePrompt || '').trim();
 
-  const modelsToTry: string[] = [];
-  if (model === 'gemini-3.8-flash-tts' && Date.now() >= flashTtsQuotaCooldownUntil) {
-    modelsToTry.push('gemini-3.8-flash-tts');
-  }
-  if (!modelsToTry.includes('gemini-3.8-flash-lite-tts')) {
-    modelsToTry.push('gemini-3.8-flash-lite-tts');
-  }
+  const rawCandidates = getTtsModelCandidates(preferLite);
+  const now = Date.now();
+  const activeCandidates = rawCandidates.filter(
+    (m) => (ttsModelQuotaCooldownUntil.get(m) ?? 0) <= now
+  );
+  const modelsToTry = activeCandidates.length > 0 ? activeCandidates : rawCandidates;
 
   let lastErr: unknown = null;
 
-  for (const currentModel of modelsToTry) {
-    const modelText =
-      currentModel === 'gemini-3.8-flash-tts' ? spokenText : stripScriptTags(spokenText);
+  for (let mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
+    const currentModel = modelsToTry[mIdx];
+    const supportsRichSpeechTags = currentModel.includes('3.8-flash-tts');
+    const modelText = supportsRichSpeechTags ? spokenText : stripScriptTags(spokenText);
 
     const buildFallbackPrompt = (includeVoiceHint: boolean) => {
       const hints = [
@@ -1182,9 +1438,9 @@ async function synthesizeStyledSpeech(
     }> = [
       {
         parts: [
-          cleanStyle
+          cleanStyle && supportsRichSpeechTags
             ? { text: modelText, speechMetadata: { style: cleanStyle } }
-            : { text: modelText },
+            : { text: buildFallbackPrompt(false) },
         ],
         includeSpeechConfig: true,
       },
@@ -1229,16 +1485,13 @@ async function synthesizeStyledSpeech(
         const msg = err instanceof Error ? err.message : String(err);
         if (isQuotaExceededError(err)) {
           const isDailyLimit = msg.includes('PerDay') || msg.includes('per day');
-          if (currentModel === 'gemini-3.8-flash-tts' && isDailyLimit) {
-            flashTtsQuotaCooldownUntil = Date.now() + 15 * 60 * 1000;
-            console.warn(
-              '[tts] gemini-3.8-flash-tts daily quota exceeded; falling back to gemini-3.8-flash-lite-tts'
-            );
+          if (isDailyLimit) {
+            ttsModelQuotaCooldownUntil.set(currentModel, Date.now() + 15 * 60 * 1000);
           }
-          break; // Move to next fallback model
+          break;
         }
         if (isServiceBusyError(err)) {
-          await new Promise((r) => setTimeout(r, 800));
+          await new Promise((r) => setTimeout(r, 700));
           try {
             const retryResp = await ai.models.generateContent({
               model: currentModel,
@@ -1274,9 +1527,16 @@ async function synthesizeStyledSpeech(
           msg.includes('speechConfig') ||
           msg.includes('Unknown name');
         if (!isSchemaMismatch) {
-          throw err;
+          // Move to next fallback TTS model instead of aborting early
+          break;
         }
       }
+    }
+
+    if (mIdx < modelsToTry.length - 1) {
+      console.warn(
+        `[gemini-tts] model "${currentModel}" failed; falling back to "${modelsToTry[mIdx + 1]}"`
+      );
     }
   }
 
@@ -1316,12 +1576,7 @@ app.post('/api/generate-voiceover', async (req, res) => {
       return res.status(400).json({ error: '口播字幕内容为空，请先补充文案。' });
     }
 
-    // Reserve gemini-3.8-flash-tts (10 req/day Free Tier) for single-clip/voice-clone preview;
-    // use high-throughput gemini-3.8-flash-lite-tts for multi-cue timeline batch synthesis.
-    const ttsModel =
-      isExpressive && targetCues.length <= 2
-        ? 'gemini-3.8-flash-tts'
-        : 'gemini-3.8-flash-lite-tts';
+    const preferLiteTts = !isExpressive || targetCues.length > 2;
 
     const platformStyle =
       platform === 'douyin'
@@ -1376,7 +1631,7 @@ app.post('/api/generate-voiceover', async (req, res) => {
                 : rawText;
 
             const inline = await synthesizeStyledSpeech(ai, {
-              model: ttsModel,
+              preferLite: preferLiteTts,
               voiceName: safeVoice,
               spokenText,
               stylePrompt: combinedStyle,
@@ -1423,7 +1678,7 @@ app.post('/api/generate-voiceover', async (req, res) => {
       results.push(...batchResults);
     }
 
-    const actualModelUsed = results[0]?.modelUsed || ttsModel;
+    const actualModelUsed = results[0]?.modelUsed || getTtsModelCandidates(preferLiteTts)[0];
     const sanitizedCues = results.map(({ modelUsed: _m, ...rest }) => rest);
 
     return res.json({
@@ -1444,9 +1699,7 @@ app.post('/api/generate-voiceover', async (req, res) => {
         error: 'AI 语音合成服务当前高峰拥挤，请几秒后重试，或使用「麦克风录自己声音」完成配音。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : 'AI 配音合成失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 配音合成失败，请稍后重试。' });
   }
 });
 
@@ -1471,8 +1724,7 @@ app.post('/api/voice-clone/train', async (req, res) => {
         ? mimeType.split(';')[0]
         : 'audio/webm';
 
-    const analysisResp = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const analysisResp = await generateTextContentWithFallback(ai, {
       contents: {
         parts: [
           {
@@ -1495,7 +1747,7 @@ Return structured voice modeling parameters so we can faithfully reproduce this 
         ],
       },
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -1562,7 +1814,6 @@ Return structured voice modeling parameters so we can faithfully reproduce this 
         : '大家好，这是我刚刚完成建模的个性化专属音色，以后每一条视频都能用这个声音自动口播。';
 
     const previewInline = await synthesizeStyledSpeech(ai, {
-      model: 'gemini-3.8-flash-tts',
       voiceName: baseVoice,
       spokenText: `<breath> ${safePreviewText}`,
       stylePrompt: voiceDesignPrompt,
@@ -1605,9 +1856,7 @@ Return structured voice modeling parameters so we can faithfully reproduce this 
         error: 'AI 语音合成调用额度已达当前上限，请稍后再试或稍后重新生成试听样音。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : 'AI 声音克隆建模失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 声音克隆建模失败，请稍后重试。' });
   }
 });
 
@@ -1641,7 +1890,6 @@ app.post('/api/voice-clone/preview', async (req, res) => {
     const ai = getGeminiClient();
 
     const inline = await synthesizeStyledSpeech(ai, {
-      model: 'gemini-3.8-flash-tts',
       voiceName: safeVoice,
       spokenText: `${expVal >= 0.4 ? '<breath> ' : ''}${text.trim().slice(0, 160)}`,
       stylePrompt: `${baseStyle}. ${expDirective}`,
@@ -1663,8 +1911,7 @@ app.post('/api/voice-clone/preview', async (req, res) => {
         error: 'AI 语音服务当前高峰拥挤，请几秒后重试，或先使用「试听 EQ 音效」本地预览。',
       });
     }
-    const message = err instanceof Error ? err.message : '试听生成失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '试听音频生成失败，请稍后重试。' });
   }
 });
 
@@ -1724,11 +1971,10 @@ Analyze this voiceover audio track (${sourceLabel}${hasClonedVoice ? `, cloned v
 Identify ambient noises (e.g., room hum/AC rumble, microphone self-noise/hiss, breath/plosive mud, electrical buzz, or subtle synthesis floor) and output optimal Web Audio vocal denoising filter parameters so the cloned or recorded voice sounds studio-grade, clean, warm, and crisp.`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts: parts as never },
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -1817,9 +2063,7 @@ Identify ambient noises (e.g., room hum/AC rumble, microphone self-noise/hiss, b
         error: 'AI 环境音诊断调用已达当前上限，请直接开启下方「AI 智能背景降噪」开关使用本地自适应滤波。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : 'AI 环境音分析失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 环境音分析失败，请稍后重试。' });
   }
 });
 
@@ -1858,8 +2102,7 @@ app.post('/api/polish-brief', async (req, res) => {
             .join(' | ')
         : '无额外指定素材，可自由安排镜头景别';
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: `Raw Creator Brief: "${brief.trim()}"
 Editing Style: ${editingStyle}
 Target Duration: ${safeDuration} seconds
@@ -1876,7 +2119,7 @@ Requirements:
       config: {
         systemInstruction:
           'You are an elite Douyin/TikTok short-video scriptwriter and viral storyboard director. Always return crisp, natural Simplified Chinese storyboard JSON.',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -1926,9 +2169,7 @@ Requirements:
         error: 'AI 脚本润色调用额度已达上限，请稍后再试。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : 'AI 脚本辅助润色失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 脚本辅助润色失败，请稍后重试。' });
   }
 });
 
@@ -2020,12 +2261,11 @@ Output ONLY a single JSON object (no markdown commentary outside JSON) in Simpli
   ]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: searchPrompt,
       config: {
         tools: [{ googleSearch: {} }],
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
       },
     });
 
@@ -2172,9 +2412,7 @@ Output ONLY a single JSON object (no markdown commentary outside JSON) in Simpli
         error: 'AI 版权库检索调用额度已达当前上限，请稍后再试。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : 'AI 版权风险扫描失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'AI 版权风险扫描失败，请稍后重试。' });
   }
 });
 
@@ -2244,11 +2482,10 @@ Return JSON describing the cloned virtual anchor persona, 3 concise Simplified C
     });
 
     const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: { parts: parts as never },
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: 'LOW' },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -2304,7 +2541,6 @@ Return JSON describing the cloned virtual anchor persona, 3 concise Simplified C
     if (generateGreeting && !cleanAudio) {
       try {
         const inline = await synthesizeStyledSpeech(ai, {
-          model: 'gemini-3.8-flash-tts',
           voiceName: baseVoice,
           spokenText: `<breath> ${sampleLine}`,
           stylePrompt: voiceDesignPrompt,
@@ -2344,9 +2580,7 @@ Return JSON describing the cloned virtual anchor persona, 3 concise Simplified C
         error: 'AI 形象分析调用额度已达当前上限，请稍后再试。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : '虚拟主播克隆分析失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '虚拟主播克隆分析失败，请稍后重试。' });
   }
 });
 
@@ -2358,6 +2592,9 @@ app.post('/api/digital-human/drive', async (req, res) => {
       baseVoice = 'Kore',
       voiceDesignPrompt = '',
       expressiveness = 0.78,
+      phonemeAlignmentEnabled = true,
+      phonemeKeyframeOffsetMs = -12,
+      phonemeOnsetAdvanceMs = 20,
     } = req.body ?? {};
 
     if (!scriptText || typeof scriptText !== 'string' || !scriptText.trim()) {
@@ -2380,17 +2617,26 @@ app.post('/api/digital-human/drive', async (req, res) => {
 
     const ai = getGeminiClient();
     const inline = await synthesizeStyledSpeech(ai, {
-      model: 'gemini-3.8-flash-tts',
       voiceName: safeVoice,
       spokenText: `<breath> ${scriptText.trim().slice(0, 260)}`,
       stylePrompt,
     });
 
     const durationSec = getWavDurationSec(inline.data);
+    const phonemeAlignment =
+      phonemeAlignmentEnabled !== false
+        ? extractWavMelPhonemeAlignment(inline.data, {
+            enabled: true,
+            keyframeOffsetMs: Number(phonemeKeyframeOffsetMs ?? -12),
+            onsetAdvanceMs: Number(phonemeOnsetAdvanceMs ?? 20),
+          })
+        : undefined;
+
     return res.json({
       audioBase64: inline.data,
       mimeType: inline.mimeType || 'audio/wav',
       audioDurationSec: durationSec ?? Number(Math.max(2, scriptText.trim().length * 0.24).toFixed(2)),
+      phonemeAlignment,
     });
   } catch (err: unknown) {
     console.error('[api/digital-human/drive] error:', err);
@@ -2404,9 +2650,7 @@ app.post('/api/digital-human/drive', async (req, res) => {
         error: 'AI 语音合成服务高峰拥挤，请稍后重试或使用麦克风直录驱动。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : '数字人语音驱动合成失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '数字人语音驱动合成失败，请稍后重试。' });
   }
 });
 
@@ -2470,8 +2714,7 @@ ${metricsSummary}
 - toneSummary: 一句 25-55 字的中文语调分析与肌肉微调说明。`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+    const response = await generateTextContentWithFallback(ai, {
       contents: [{ role: 'user', parts: parts as never }],
       config: {
         responseMimeType: 'application/json',
@@ -2563,9 +2806,7 @@ ${metricsSummary}
         error: 'AI 情感分析调用额度已达当前上限，已使用本地声学语调分析引擎匹配面部肌肉参数。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : '音频情感匹配分析失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '音频情感匹配分析失败，请稍后重试。' });
   }
 });
 
@@ -2684,23 +2925,7 @@ ${subsPrompt || '（暂无字幕）'}
       },
     };
 
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        ...requestPayload,
-      });
-    } catch (firstErr: unknown) {
-      if (isServiceBusyError(firstErr)) {
-        await new Promise((r) => setTimeout(r, 600));
-        response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
-          ...requestPayload,
-        });
-      } else {
-        throw firstErr;
-      }
-    }
+    const response = await generateTextContentWithFallback(ai, requestPayload);
 
     let parsed: Record<string, unknown> = {};
     try {
@@ -2776,11 +3001,303 @@ ${subsPrompt || '（暂无字幕）'}
         error: 'AI 模型当前处于请求高峰，已自动切换为本地脚本语境实时分析并高亮推荐动作。',
       });
     }
-    const message =
-      err instanceof Error ? err.message : '自动动作建议分析失败，请稍后重试。';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: '自动动作建议分析失败，请稍后重试。' });
   }
 });
+
+app.post('/api/digital-human/multilingual-dub', async (req, res) => {
+  try {
+    const {
+      anchorName = '虚拟主播',
+      sourceScript = '',
+      preTranslatedScript = '',
+      targetLanguage = 'en-US',
+      baseVoice = 'Kore',
+      voiceDesignPrompt = '',
+      clonedVoice = null,
+      referenceAudioBase64,
+      referenceAudioMimeType = 'audio/wav',
+      expressiveness = 0.78,
+      platform = 'douyin',
+      phonemeAlignmentEnabled = true,
+      phonemeKeyframeOffsetMs = -12,
+      phonemeOnsetAdvanceMs = 20,
+    } = req.body ?? {};
+
+    const cleanSource = typeof sourceScript === 'string' ? sourceScript.trim() : '';
+    const cleanPreTranslated =
+      typeof preTranslatedScript === 'string' ? preTranslatedScript.trim() : '';
+
+    if (!cleanSource && !cleanPreTranslated) {
+      return res.status(400).json({
+        error: '请先输入或导入现有数字人语音脚本后再进行多语言语音合成。',
+      });
+    }
+
+    const langConfigMap: Record<
+      string,
+      { label: string; nativeName: string; ttsDirective: string }
+    > = {
+      'zh-CN': {
+        label: '中文',
+        nativeName: 'Mandarin Chinese (简体中文)',
+        ttsDirective: 'Speak fluent, natural Mandarin Chinese',
+      },
+      'en-US': {
+        label: '英语',
+        nativeName: 'American English',
+        ttsDirective: 'Speak fluent, idiomatic American English',
+      },
+      'ja-JP': {
+        label: '日语',
+        nativeName: 'Japanese (日本語)',
+        ttsDirective: 'Speak fluent, natural Tokyo Japanese',
+      },
+      'ko-KR': {
+        label: '韩语',
+        nativeName: 'Korean (한국어)',
+        ttsDirective: 'Speak fluent, natural Seoul Korean',
+      },
+      'es-ES': {
+        label: '西班牙语',
+        nativeName: 'Spanish (Español)',
+        ttsDirective: 'Speak fluent, natural neutral Spanish',
+      },
+      'fr-FR': {
+        label: '法语',
+        nativeName: 'French (Français)',
+        ttsDirective: 'Speak fluent, natural Parisian French',
+      },
+      'de-DE': {
+        label: '德语',
+        nativeName: 'German (Deutsch)',
+        ttsDirective: 'Speak fluent, natural standard German',
+      },
+      'pt-BR': {
+        label: '葡萄牙语',
+        nativeName: 'Portuguese (Português)',
+        ttsDirective: 'Speak fluent, natural Brazilian Portuguese',
+      },
+      'ar-SA': {
+        label: '阿拉伯语',
+        nativeName: 'Arabic (العربية)',
+        ttsDirective: 'Speak fluent, natural Modern Standard Arabic',
+      },
+    };
+
+    const safeLang = Object.prototype.hasOwnProperty.call(langConfigMap, String(targetLanguage))
+      ? String(targetLanguage)
+      : 'en-US';
+    const langMeta = langConfigMap[safeLang];
+
+    const validVoices = new Set(['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir']);
+    const clonedBaseVoice =
+      clonedVoice &&
+      typeof clonedVoice === 'object' &&
+      typeof (clonedVoice as { baseVoice?: unknown }).baseVoice === 'string' &&
+      validVoices.has(String((clonedVoice as { baseVoice?: unknown }).baseVoice))
+        ? String((clonedVoice as { baseVoice?: unknown }).baseVoice)
+        : null;
+    const fallbackVoice = clonedBaseVoice ?? (validVoices.has(String(baseVoice)) ? String(baseVoice) : 'Kore');
+
+    const cleanAudio =
+      typeof referenceAudioBase64 === 'string' && referenceAudioBase64.trim()
+        ? referenceAudioBase64.includes(',')
+          ? referenceAudioBase64.split(',')[1]
+          : referenceAudioBase64.trim()
+        : '';
+
+    const clonedObj =
+      clonedVoice && typeof clonedVoice === 'object'
+        ? (clonedVoice as Record<string, unknown>)
+        : null;
+    const vocalPersonaParts = [
+      typeof voiceDesignPrompt === 'string' ? voiceDesignPrompt.trim() : '',
+      typeof clonedObj?.voiceDesignPrompt === 'string' ? clonedObj.voiceDesignPrompt.trim() : '',
+      typeof clonedObj?.timbreSummary === 'string' ? `Timbre: ${clonedObj.timbreSummary.trim()}` : '',
+      typeof clonedObj?.speakingPace === 'string' ? `Pace: ${clonedObj.speakingPace.trim()}` : '',
+    ].filter(Boolean);
+
+    const ai = getGeminiClient();
+
+    const parts: Array<Record<string, unknown>> = [];
+    if (cleanAudio) {
+      parts.push({
+        inlineData: {
+          mimeType:
+            typeof referenceAudioMimeType === 'string' && referenceAudioMimeType
+              ? referenceAudioMimeType
+              : 'audio/wav',
+          data: cleanAudio,
+        },
+      });
+    }
+
+    parts.push({
+      text: `你是一位专业的多语言短视频配音导演与 AI 声线克隆工程专家。
+你的任务是将数字人主播「${String(anchorName).trim()}」现有的语音脚本准确翻译并口语化本地化为目标语种「${langMeta.label} (${langMeta.nativeName})」，同时深度提取并保留原主播的声线特征用于跨语种配音克隆。
+
+现有语音脚本：
+"${(cleanSource || cleanPreTranslated).slice(0, 320)}"
+${cleanPreTranslated ? `\n用户已手工微调的目标译文（请以该译文语意为准保持自然口播节奏）：\n"${cleanPreTranslated.slice(0, 320)}"` : ''}
+
+原主播已知声纹设定：
+- 平台风格：${String(platform)}
+- 基底声线参考：${fallbackVoice}
+- 音色描述：${vocalPersonaParts.join(' | ') || '自然亲和的短视频口播主播声线'}
+${cleanAudio ? '- 已附带原主播真实人声参考音频，请仔细听辨音频中的嗓音质感、音高明亮度、共鸣厚重度、语速习惯与气息感，将其精准编码进目标语种的声线克隆风格指令中。' : ''}
+
+请返回严格 JSON：
+1. translatedScript: ${cleanPreTranslated ? '对用户提供的目标译文做极轻微标点呼吸感优化（保持原译文核心措辞不变）' : `将现有脚本翻译为地道、有短视频口播感染力的「${langMeta.nativeName}」口播词`}，控制时长与原脚本节奏基本一致（不超过 250 字符）。不要输出括号注解。
+2. recommendedBaseVoice: 从 ["Kore", "Zephyr", "Puck", "Charon", "Fenrir"] 中选择最贴合原主播音色性别与共鸣的一枚（若无音频参考可沿用 "${fallbackVoice}"）。
+3. clonedVoiceStylePrompt: 用英文写一段 25~50 词的 TTS 声线克隆指导（直接描述嗓音音色、音域、气息、咬字锐度、语速节奏与跨语种发音要求，供 TTS 引擎复刻原声线特征）。
+4. voiceCloneSummary: 用 20~48 字中文简明总结本次跨语种声线克隆保留了主播哪些声音特征（例如："完整保留温暖明快的中高频女声质感与轻快呼吸停顿节奏，无缝迁移至英语口播"）。`,
+    });
+
+    const translationPayload = {
+      contents: [{ role: 'user', parts: parts as never }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            translatedScript: { type: Type.STRING },
+            recommendedBaseVoice: { type: Type.STRING },
+            clonedVoiceStylePrompt: { type: Type.STRING },
+            voiceCloneSummary: { type: Type.STRING },
+          },
+          required: [
+            'translatedScript',
+            'recommendedBaseVoice',
+            'clonedVoiceStylePrompt',
+            'voiceCloneSummary',
+          ],
+        },
+      },
+    };
+
+    const translationResp = await generateTextContentWithFallback(ai, translationPayload);
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      const rawJson = (translationResp.text || '{}')
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '');
+      parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    } catch {
+      const jsonMatch = (translationResp.text || '').match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        } catch {
+          parsed = {};
+        }
+      }
+    }
+
+    const translatedScript = cleanPreTranslated
+      ? cleanPreTranslated
+      : typeof parsed?.translatedScript === 'string' && parsed.translatedScript.trim()
+        ? parsed.translatedScript.trim()
+        : cleanSource;
+
+    const candidateVoice = String(parsed?.recommendedBaseVoice || '');
+    const usedVoice =
+      clonedBaseVoice ??
+      (validVoices.has(candidateVoice) ? candidateVoice : fallbackVoice);
+
+    const expVal = Math.max(0.2, Math.min(1, Number(expressiveness) || 0.78));
+    const expDirective =
+      expVal >= 0.78
+        ? 'expressive short-video creator cadence with natural breathing and engaging emphasis'
+        : 'clear, balanced presenter delivery';
+
+    const extractedStyle =
+      typeof parsed?.clonedVoiceStylePrompt === 'string' && parsed.clonedVoiceStylePrompt.trim()
+        ? parsed.clonedVoiceStylePrompt.trim()
+        : vocalPersonaParts[0] || `Preserve ${String(anchorName).trim()} vocal timbre and pacing`;
+
+    const clonedStylePrompt = `${langMeta.ttsDirective}. ${extractedStyle}. ${expDirective}`.slice(
+      0,
+      260
+    );
+
+    const inline = await synthesizeStyledSpeech(ai, {
+      voiceName: usedVoice,
+      spokenText: `<breath> ${translatedScript.slice(0, 260)}`,
+      stylePrompt: clonedStylePrompt,
+    });
+
+    const durationSec = getWavDurationSec(inline.data);
+    const phonemeAlignment =
+      phonemeAlignmentEnabled !== false
+        ? extractWavMelPhonemeAlignment(inline.data, {
+            enabled: true,
+            keyframeOffsetMs: Number(phonemeKeyframeOffsetMs ?? -12),
+            onsetAdvanceMs: Number(phonemeOnsetAdvanceMs ?? 20),
+          })
+        : undefined;
+    const voiceCloneSummary =
+      typeof parsed?.voiceCloneSummary === 'string' && parsed.voiceCloneSummary.trim()
+        ? parsed.voiceCloneSummary.trim()
+        : `已提取「${String(anchorName).trim()}」原声线音色与语速节奏特征，克隆合成地道${langMeta.label}配音。`;
+
+    return res.json({
+      sourceScript: cleanSource || cleanPreTranslated,
+      translatedScript,
+      targetLanguage: safeLang,
+      targetLanguageLabel: langMeta.label,
+      voiceCloneSummary,
+      baseVoice: usedVoice,
+      clonedStylePrompt,
+      audioBase64: inline.data,
+      mimeType: inline.mimeType || 'audio/wav',
+      audioDurationSec:
+        durationSec ?? Number(Math.max(2, translatedScript.length * 0.14).toFixed(2)),
+      modelUsed: inline.modelUsed,
+      phonemeAlignment,
+    });
+  } catch (err: unknown) {
+    console.error('[api/digital-human/multilingual-dub] error:', err);
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'AI 多语言声线合成调用额度已达当前上限，请稍后再试。',
+      });
+    }
+    if (isServiceBusyError(err)) {
+      return res.status(503).json({
+        error: 'AI 翻译或语音合成服务高峰拥挤，请稍后重试。',
+      });
+    }
+    return res.status(500).json({ error: '多语言语音合成失败，请稍后重试。' });
+  }
+});
+
+// Unknown /api/* JSON 404 handler (protected by auth & rate-limiter above)
+app.use('/api', (_req, res) => {
+  return res.status(404).json({ error: '请求的接口路径不存在。' });
+});
+
+// Global Express error handler — never expose internal error.message or stack traces on 500
+app.use(
+  (
+    err: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    console.error('[express] unhandled error:', err);
+    if (
+      err instanceof SyntaxError &&
+      'status' in err &&
+      (err as { status?: number }).status === 400
+    ) {
+      return res.status(400).json({ error: '请求体 JSON 格式无效，请检查后重试。' });
+    }
+    return res.status(500).json({ error: '服务端内部处理异常，请稍后重试。' });
+  }
+);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

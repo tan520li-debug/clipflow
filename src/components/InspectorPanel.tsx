@@ -42,6 +42,7 @@ import type {
   DigitalHumanClipConfig,
   DigitalHumanEmotionId,
   DigitalHumanFacialMuscles,
+  DigitalHumanPhonemeAlignmentProfile,
   DigitalHumanProfile,
   MediaAsset,
   MotionType,
@@ -138,6 +139,7 @@ interface InspectorPanelProps {
       text: string;
       baseVoice: VoiceoverVoice;
       clonedVoiceId?: string;
+      phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
     }
   ) => void;
   onRemoveClipDigitalHuman: (clipId: string) => void;
@@ -171,6 +173,10 @@ interface InspectorPanelProps {
     clipId: string,
     cameraMotion: DigitalHumanCameraMotion
   ) => void;
+  onUpdateClipDigitalHumanPhonemeAlignment?: (
+    clipId: string,
+    phonemeAlignment: DigitalHumanPhonemeAlignmentProfile
+  ) => void;
   onInsertDigitalHumanClip: (params: {
     insertAt: DigitalHumanInsertTarget;
     config: DigitalHumanClipConfig;
@@ -183,6 +189,7 @@ interface InspectorPanelProps {
       text: string;
       baseVoice: VoiceoverVoice;
       clonedVoiceId?: string;
+      phonemeAlignment?: DigitalHumanPhonemeAlignmentProfile;
     };
   }) => void;
   brief?: string;
@@ -345,6 +352,7 @@ export function InspectorPanel({
   onBatchApplyDigitalHumanActions,
   onUpdateClipDigitalHumanEmotion,
   onUpdateClipDigitalHumanCameraMotion,
+  onUpdateClipDigitalHumanPhonemeAlignment,
   onInsertDigitalHumanClip,
   brief = '',
 }: InspectorPanelProps) {
@@ -1553,6 +1561,7 @@ export function InspectorPanel({
             onBatchApplyDigitalHumanActions={onBatchApplyDigitalHumanActions}
             onUpdateClipDigitalHumanEmotion={onUpdateClipDigitalHumanEmotion}
             onUpdateClipDigitalHumanCameraMotion={onUpdateClipDigitalHumanCameraMotion}
+            onUpdateClipDigitalHumanPhonemeAlignment={onUpdateClipDigitalHumanPhonemeAlignment}
             onInsertDigitalHumanClip={onInsertDigitalHumanClip}
             brief={brief}
           />
@@ -1581,6 +1590,9 @@ export function InspectorPanel({
                       {selectedClip.digitalHuman.cameraMotion?.enabled &&
                       selectedClip.digitalHuman.cameraMotion.preset !== 'none'
                         ? ` · 运镜：${getDigitalHumanCameraPreset(selectedClip.digitalHuman.cameraMotion.preset).label}`
+                        : ''}
+                      {selectedClip.digitalHuman.phonemeAlignment?.enabled
+                        ? ` · 音素对齐(${selectedClip.digitalHuman.phonemeAlignment.keyframeOffsetMs >= 0 ? `+${selectedClip.digitalHuman.phonemeAlignment.keyframeOffsetMs}` : selectedClip.digitalHuman.phonemeAlignment.keyframeOffsetMs}ms)`
                         : ''}
                     </div>
                   </div>
