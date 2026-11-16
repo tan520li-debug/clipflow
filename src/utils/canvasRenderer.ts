@@ -476,6 +476,10 @@ export function renderTimelineFrame({
   const tRatio = inTransition ? localTime / transWindow : 1;
   const canvasExtraBlur = applyTransitionBlurToCanvas ? computeTransitionBlurPx(clips, timeSec) : 0;
 
+  const blendState = clip.digitalHuman
+    ? computeClipPoseBlendState(clip, prevClip, localTime)
+    : undefined;
+
   if (clip.digitalHuman?.mode === 'full-scene') {
     drawDigitalHumanFullScene(
       ctx,
@@ -487,7 +491,8 @@ export function renderTimelineFrame({
       progress,
       clip.filter,
       voiceActivity,
-      clip.colorAdjustments
+      clip.colorAdjustments,
+      blendState
     );
     if (inTransition && clip.transition === 'flash') {
       ctx.save();
@@ -705,7 +710,8 @@ export function renderTimelineFrame({
       height,
       timeSec,
       voiceActivity,
-      progress
+      progress,
+      blendState
     );
   }
 
@@ -728,48 +734,53 @@ export function renderTimelineFrame({
   return { activeClipId: clip.id };
 }
 
-function drawAnchorPortraitCover(
-  ctx: CanvasRenderingContext2D,
-  el: LoadedMediaElement,
-  dx: number,
-  dy: number,
+interface ActionPoseKinematics {
+  poseScale: number;
+  poseScaleY: number;
+  microTilt: number;
+  shiftX: number;
+  bobY: number;
+}
+
+interface DigitalHumanPoseBlendState {
+  blendFromAction?: DigitalHumanActionId;
+  blendWeight: number;
+}
+
+function computeClipPoseBlendState(
+  clip: TimelineClip,
+  prevClip: TimelineClip | null,
+  localTime: number
+): DigitalHumanPoseBlendState {
+  const dh = clip.digitalHuman;
+  if (!dh) return { blendWeight: 1 };
+  const targetAction: DigitalHumanActionId = dh.action ?? 'explain';
+  const sourceAction = prevClip?.digitalHuman?.action ?? dh.blendFromAction;
+  const rawDuration = Math.max(0, Math.min(1.5, dh.actionBlendDuration ?? 0.45));
+  const effectiveDuration = Math.min(rawDuration, Math.max(0, clip.duration * 0.75));
+  if (
+    sourceAction &&
+    sourceAction !== targetAction &&
+    effectiveDuration > 0.02 &&
+    localTime < effectiveDuration
+  ) {
+    const t = Math.max(0, Math.min(1, localTime / effectiveDuration));
+    const smoothWeight = t * t * (3 - 2 * t);
+    return { blendFromAction: sourceAction, blendWeight: smoothWeight };
+  }
+  return { blendWeight: 1 };
+}
+
+function computeActionPoseKinematics(
+  action: DigitalHumanActionId,
+  timeSec: number,
+  speechPulse: number,
+  jawDrive: number,
+  tension: number,
   dw: number,
   dh: number,
-  speechPulse: number,
-  timeSec: number,
-  filter: ColorFilter,
-  colorAdj?: ColorAdjustments,
-  action: DigitalHumanActionId = 'explain',
-  pointDir: -1 | 1 = 1,
-  emotion: DigitalHumanEmotionId = 'neutral',
-  muscles?: DigitalHumanFacialMuscles,
-  cameraMotion?: DigitalHumanCameraMotion,
-  progress = 0.5
-) {
-  const natW = el instanceof HTMLVideoElement ? el.videoWidth || 540 : el.naturalWidth || 540;
-  const natH = el instanceof HTMLVideoElement ? el.videoHeight || 720 : el.naturalHeight || 720;
-  if (!natW || !natH) return;
-
-  const m = muscles ? clampFacialMuscles(muscles) : getDigitalHumanEmotionPreset(emotion).muscles;
-  const jawDrive = speechPulse * m.jawOpenness * (0.7 + 0.3 * m.lipSyncSharpness);
-  const tension = m.headTension;
-
-  const baseFilter = getCanvasFilterString(filter, colorAdj);
-  ctx.save();
-  if (emotion === 'serious' || emotion === 'suspense') {
-    const moodFilter =
-      emotion === 'suspense'
-        ? 'contrast(1.12) saturate(0.88) brightness(0.94)'
-        : 'contrast(1.08) saturate(0.92)';
-    ctx.filter = baseFilter === 'none' ? moodFilter : `${baseFilter} ${moodFilter}`;
-  } else if (emotion === 'excited') {
-    const moodFilter = 'contrast(1.06) saturate(1.14) brightness(1.04)';
-    ctx.filter = baseFilter === 'none' ? moodFilter : `${baseFilter} ${moodFilter}`;
-  } else {
-    ctx.filter = baseFilter;
-  }
-
-  const coverScale = Math.max(dw / natW, dh / natH);
+  pointDir: -1 | 1
+): ActionPoseKinematics {
   let poseScale = 1 + Math.sin(timeSec * 2.2) * 0.012 + speechPulse * 0.025;
   let poseScaleY = 1 + jawDrive * 0.022;
   let microTilt = Math.sin(timeSec * (2.6 + tension * 0.8)) * (0.008 + speechPulse * 0.014) * tension;
@@ -823,6 +834,90 @@ function drawAnchorPortraitCover(
       bobY = -jawDrive * (dh * 0.015) + Math.sin(timeSec * 2.6) * (dh * 0.008 * tension);
       break;
     }
+  }
+
+  return { poseScale, poseScaleY, microTilt, shiftX, bobY };
+}
+
+function drawAnchorPortraitCover(
+  ctx: CanvasRenderingContext2D,
+  el: LoadedMediaElement,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  speechPulse: number,
+  timeSec: number,
+  filter: ColorFilter,
+  colorAdj?: ColorAdjustments,
+  action: DigitalHumanActionId = 'explain',
+  pointDir: -1 | 1 = 1,
+  emotion: DigitalHumanEmotionId = 'neutral',
+  muscles?: DigitalHumanFacialMuscles,
+  cameraMotion?: DigitalHumanCameraMotion,
+  progress = 0.5,
+  blendFromAction?: DigitalHumanActionId,
+  blendWeight = 1
+) {
+  const natW = el instanceof HTMLVideoElement ? el.videoWidth || 540 : el.naturalWidth || 540;
+  const natH = el instanceof HTMLVideoElement ? el.videoHeight || 720 : el.naturalHeight || 720;
+  if (!natW || !natH) return;
+
+  const m = muscles ? clampFacialMuscles(muscles) : getDigitalHumanEmotionPreset(emotion).muscles;
+  const jawDrive = speechPulse * m.jawOpenness * (0.7 + 0.3 * m.lipSyncSharpness);
+  const tension = m.headTension;
+
+  const baseFilter = getCanvasFilterString(filter, colorAdj);
+  ctx.save();
+  if (emotion === 'serious' || emotion === 'suspense') {
+    const moodFilter =
+      emotion === 'suspense'
+        ? 'contrast(1.12) saturate(0.88) brightness(0.94)'
+        : 'contrast(1.08) saturate(0.92)';
+    ctx.filter = baseFilter === 'none' ? moodFilter : `${baseFilter} ${moodFilter}`;
+  } else if (emotion === 'excited') {
+    const moodFilter = 'contrast(1.06) saturate(1.14) brightness(1.04)';
+    ctx.filter = baseFilter === 'none' ? moodFilter : `${baseFilter} ${moodFilter}`;
+  } else {
+    ctx.filter = baseFilter;
+  }
+
+  const coverScale = Math.max(dw / natW, dh / natH);
+  const targetPose = computeActionPoseKinematics(
+    action,
+    timeSec,
+    speechPulse,
+    jawDrive,
+    tension,
+    dw,
+    dh,
+    pointDir
+  );
+
+  let poseScale = targetPose.poseScale;
+  let poseScaleY = targetPose.poseScaleY;
+  let microTilt = targetPose.microTilt;
+  let shiftX = targetPose.shiftX;
+  let bobY = targetPose.bobY;
+
+  if (blendFromAction && blendFromAction !== action && blendWeight < 1) {
+    const w = Math.max(0, Math.min(1, blendWeight));
+    const fromPose = computeActionPoseKinematics(
+      blendFromAction,
+      timeSec,
+      speechPulse,
+      jawDrive,
+      tension,
+      dw,
+      dh,
+      pointDir
+    );
+    const lerp = (a: number, b: number) => a + (b - a) * w;
+    poseScale = lerp(fromPose.poseScale, targetPose.poseScale);
+    poseScaleY = lerp(fromPose.poseScaleY, targetPose.poseScaleY);
+    microTilt = lerp(fromPose.microTilt, targetPose.microTilt);
+    shiftX = lerp(fromPose.shiftX, targetPose.shiftX);
+    bobY = lerp(fromPose.bobY, targetPose.bobY);
   }
 
   // Emotion-specific head expression offset (browLift pushes subtly upward; serious tightens vertical anchor)
@@ -933,16 +1028,20 @@ function drawDigitalHumanPoseOverlay(
   timeSec: number,
   speechPulse: number,
   accentColor: string,
-  pointDir: -1 | 1 = 1
+  pointDir: -1 | 1 = 1,
+  alphaScale = 1
 ) {
   const tmpl = getDigitalHumanActionTemplate(action);
   const tone = tmpl.badgeColor || accentColor;
   const unit = Math.min(dw, dh);
   const pulse = 0.45 + 0.55 * speechPulse;
+  const aScale = Math.max(0, Math.min(1, alphaScale));
+  if (aScale <= 0.01) return;
 
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  ctx.globalAlpha = aScale;
 
   switch (action) {
     case 'point': {
@@ -955,7 +1054,7 @@ function drawDigitalHumanPoseOverlay(
 
       ctx.strokeStyle = tone;
       ctx.lineWidth = Math.max(2.5, unit * 0.032);
-      ctx.globalAlpha = 0.88;
+      ctx.globalAlpha = 0.88 * aScale;
       ctx.beginPath();
       ctx.moveTo(baseX, baseY);
       ctx.lineTo(tipX, tipY);
@@ -970,7 +1069,7 @@ function drawDigitalHumanPoseOverlay(
       const ringR = unit * (0.075 + 0.04 * (0.5 + 0.5 * Math.sin(timeSec * 7)));
       ctx.strokeStyle = tone;
       ctx.lineWidth = Math.max(1.5, unit * 0.016);
-      ctx.globalAlpha = 0.65;
+      ctx.globalAlpha = 0.65 * aScale;
       ctx.beginPath();
       ctx.arc(tipX, tipY, ringR, 0, Math.PI * 2);
       ctx.stroke();
@@ -995,7 +1094,7 @@ function drawDigitalHumanPoseOverlay(
 
       ctx.strokeStyle = tone;
       ctx.lineWidth = Math.max(2.5, unit * 0.03);
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.85 * aScale;
       ctx.beginPath();
       ctx.moveTo(pivotX, pivotY);
       ctx.quadraticCurveTo(pivotX + unit * 0.05, dy + dh * 0.56, handX, handY);
@@ -1013,7 +1112,7 @@ function drawDigitalHumanPoseOverlay(
       // Motion arcs around waving hand
       ctx.strokeStyle = '#a7f3d0';
       ctx.lineWidth = Math.max(1.5, unit * 0.015);
-      ctx.globalAlpha = 0.45 + 0.45 * Math.abs(swing);
+      ctx.globalAlpha = (0.45 + 0.45 * Math.abs(swing)) * aScale;
       ctx.beginPath();
       ctx.arc(handX, handY, unit * 0.1, -0.8, 0.5);
       ctx.stroke();
@@ -1030,7 +1129,7 @@ function drawDigitalHumanPoseOverlay(
       const flash = 0.55 + 0.45 * Math.abs(Math.sin(timeSec * 8.5));
       ctx.strokeStyle = tone;
       ctx.lineWidth = Math.max(1.8, unit * 0.02);
-      ctx.globalAlpha = flash * 0.85;
+      ctx.globalAlpha = flash * 0.85 * aScale;
 
       const angles = [-2.55, -2.15, -1.57, -0.99, -0.59];
       for (const a of angles) {
@@ -1077,7 +1176,7 @@ function drawDigitalHumanPoseOverlay(
       const nodPhase = Math.max(0, Math.sin(timeSec * 5.2));
       const bx = dx + dw * 0.2;
       const by = dy + dh * 0.34 + nodPhase * unit * 0.03;
-      ctx.globalAlpha = 0.72 + nodPhase * 0.25;
+      ctx.globalAlpha = (0.72 + nodPhase * 0.25) * aScale;
       ctx.fillStyle = 'rgba(139, 92, 246, 0.28)';
       ctx.strokeStyle = tone;
       ctx.lineWidth = Math.max(1.5, unit * 0.018);
@@ -1101,7 +1200,7 @@ function drawDigitalHumanPoseOverlay(
       const bounce = Math.abs(Math.sin(timeSec * 5.2)) * (unit * 0.03);
       const tx = dx + dw * 0.78;
       const ty = dy + dh * 0.54 - bounce;
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = 0.92 * aScale;
       ctx.fillStyle = tone;
       drawRoundedRect(ctx, tx - unit * 0.06, ty - unit * 0.03, unit * 0.12, unit * 0.1, unit * 0.03);
       ctx.fill();
@@ -1128,7 +1227,7 @@ function drawDigitalHumanPoseOverlay(
       const wave = Math.sin(timeSec * 4.5) * (0.5 + pulse * 0.5);
       ctx.strokeStyle = tone;
       ctx.lineWidth = Math.max(2, unit * 0.024);
-      ctx.globalAlpha = 0.52 + pulse * 0.35;
+      ctx.globalAlpha = (0.52 + pulse * 0.35) * aScale;
       for (const side of [-1, 1] as const) {
         const startX = dx + dw * (0.5 + side * 0.16);
         const startY = dy + dh * 0.78;
@@ -1148,6 +1247,66 @@ function drawDigitalHumanPoseOverlay(
   }
 
   ctx.restore();
+}
+
+function drawBlendedDigitalHumanPoseOverlay(
+  ctx: CanvasRenderingContext2D,
+  action: DigitalHumanActionId,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  timeSec: number,
+  speechPulse: number,
+  accentColor: string,
+  pointDir: -1 | 1 = 1,
+  blendState?: DigitalHumanPoseBlendState
+) {
+  const fromAction = blendState?.blendFromAction;
+  const weight = blendState?.blendWeight ?? 1;
+  if (fromAction && fromAction !== action && weight < 1) {
+    const w = Math.max(0, Math.min(1, weight));
+    drawDigitalHumanPoseOverlay(
+      ctx,
+      fromAction,
+      dx,
+      dy,
+      dw,
+      dh,
+      timeSec,
+      speechPulse,
+      accentColor,
+      pointDir,
+      1 - w
+    );
+    drawDigitalHumanPoseOverlay(
+      ctx,
+      action,
+      dx,
+      dy,
+      dw,
+      dh,
+      timeSec,
+      speechPulse,
+      accentColor,
+      pointDir,
+      w
+    );
+    return;
+  }
+  drawDigitalHumanPoseOverlay(
+    ctx,
+    action,
+    dx,
+    dy,
+    dw,
+    dh,
+    timeSec,
+    speechPulse,
+    accentColor,
+    pointDir,
+    1
+  );
 }
 
 function drawVoiceWaveBars(
@@ -1187,11 +1346,18 @@ function drawDigitalHumanFullScene(
   progress: number,
   filter: ColorFilter,
   voiceActivity: number,
-  colorAdj?: ColorAdjustments
+  colorAdj?: ColorAdjustments,
+  blendState?: DigitalHumanPoseBlendState
 ) {
   const accent = dh.accentColor || '#fb7185';
   const action = dh.action ?? 'explain';
   const actionTmpl = getDigitalHumanActionTemplate(action);
+  const isBlendingPose = Boolean(
+    blendState?.blendFromAction && blendState.blendFromAction !== action && blendState.blendWeight < 1
+  );
+  const fromActionTmpl = isBlendingPose && blendState?.blendFromAction
+    ? getDigitalHumanActionTemplate(blendState.blendFromAction)
+    : null;
   const emotionEnabled = dh.emotionMatchEnabled !== false;
   const emotion: DigitalHumanEmotionId = emotionEnabled ? dh.emotion ?? 'neutral' : 'neutral';
   const emotionPreset = getDigitalHumanEmotionPreset(emotion);
@@ -1247,7 +1413,9 @@ function drawDigitalHumanFullScene(
       emotion,
       muscles,
       dh.cameraMotion,
-      progress
+      progress,
+      blendState?.blendFromAction,
+      blendState?.blendWeight ?? 1
     );
   }
 
@@ -1266,8 +1434,8 @@ function drawDigitalHumanFullScene(
     );
   }
 
-  // Pose-Driven Foreground Gesture Overlay
-  drawDigitalHumanPoseOverlay(
+  // Pose-Driven Foreground Gesture Overlay (supports cross-fade blending between consecutive actions)
+  drawBlendedDigitalHumanPoseOverlay(
     ctx,
     action,
     0,
@@ -1277,13 +1445,14 @@ function drawDigitalHumanFullScene(
     timeSec,
     speechPulse,
     accent,
-    1
+    1,
+    blendState
   );
 
   // Lower-third / Header Anchor Studio Badge (above safe bottom caption zone)
   const camActive = dh.cameraMotion?.enabled && dh.cameraMotion.preset !== 'none';
   const camPreset = camActive ? getDigitalHumanCameraPreset(dh.cameraMotion?.preset) : null;
-  const badgeW = Math.min(width * 0.82, camPreset ? 395 : 355);
+  const badgeW = Math.min(width * 0.85, camPreset || fromActionTmpl ? 410 : 355);
   const badgeH = 34;
   const badgeX = width * 0.06;
   const badgeY = height * 0.12;
@@ -1305,9 +1474,10 @@ function drawDigitalHumanFullScene(
   ctx.fillStyle = '#F4F4F5';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
+  const poseText = fromActionTmpl ? `${fromActionTmpl.label}→${actionTmpl.label}` : actionTmpl.label;
   const emotionTag = emotionEnabled && emotion !== 'neutral' ? ` · ${emotionPreset.label}` : '';
   const camTag = camPreset ? ` · ${camPreset.label}` : '';
-  ctx.fillText(`虚拟主播 · ${dh.profileName} · ${actionTmpl.label}${emotionTag}${camTag}`, badgeX + 26, badgeY + badgeH / 2);
+  ctx.fillText(`虚拟主播 · ${dh.profileName} · ${poseText}${emotionTag}${camTag}`, badgeX + 26, badgeY + badgeH / 2);
 
   if (dh.showLiveWaveRing) {
     drawVoiceWaveBars(
@@ -1334,11 +1504,18 @@ export function drawDigitalHumanPipOverlay(
   height: number,
   timeSec: number,
   voiceActivity: number,
-  progress = 0.5
+  progress = 0.5,
+  blendState?: DigitalHumanPoseBlendState
 ) {
   const accent = dh.accentColor || '#fb7185';
   const action = dh.action ?? 'explain';
   const actionTmpl = getDigitalHumanActionTemplate(action);
+  const isBlendingPose = Boolean(
+    blendState?.blendFromAction && blendState.blendFromAction !== action && blendState.blendWeight < 1
+  );
+  const fromActionTmpl = isBlendingPose && blendState?.blendFromAction
+    ? getDigitalHumanActionTemplate(blendState.blendFromAction)
+    : null;
   const emotionEnabled = dh.emotionMatchEnabled !== false;
   const emotion: DigitalHumanEmotionId = emotionEnabled ? dh.emotion ?? 'neutral' : 'neutral';
   const emotionPreset = getDigitalHumanEmotionPreset(emotion);
@@ -1450,7 +1627,9 @@ export function drawDigitalHumanPipOverlay(
       emotion,
       muscles,
       dh.cameraMotion,
-      progress
+      progress,
+      blendState?.blendFromAction,
+      blendState?.blendWeight ?? 1
     );
   }
 
@@ -1468,8 +1647,8 @@ export function drawDigitalHumanPipOverlay(
     );
   }
 
-  // Pose-driven foreground gesture overlay inside PiP
-  drawDigitalHumanPoseOverlay(
+  // Pose-driven foreground gesture overlay inside PiP (cross-fades when action blends)
+  drawBlendedDigitalHumanPoseOverlay(
     ctx,
     action,
     x,
@@ -1479,7 +1658,8 @@ export function drawDigitalHumanPipOverlay(
     timeSec,
     speechPulse,
     accent,
-    pointDir
+    pointDir,
+    blendState
   );
 
   // Mini live wave bar strip inside bottom of PiP
@@ -1515,10 +1695,11 @@ export function drawDigitalHumanPipOverlay(
 
   // Top action + emotion tag badge on PiP frame
   ctx.save();
+  const poseTag = fromActionTmpl ? `${fromActionTmpl.label}→${actionTmpl.label}` : actionTmpl.label;
   const tagText =
     emotionEnabled && emotion !== 'neutral'
-      ? `${actionTmpl.label}·${emotionPreset.label}`
-      : actionTmpl.label;
+      ? `${poseTag}·${emotionPreset.label}`
+      : poseTag;
   const pillW = Math.max(38, Math.round(tagText.length * 10 + 14));
   const pillH = 16;
   const pillX = dh.frameShape === 'circle' ? x + (pipW - pillW) / 2 : x + 8;
@@ -1550,9 +1731,15 @@ export function renderDigitalHumanMiniStage(
   action: DigitalHumanActionId = 'explain',
   emotion: DigitalHumanEmotionId = 'neutral',
   muscles?: DigitalHumanFacialMuscles,
-  cameraMotion?: DigitalHumanCameraMotion
+  cameraMotion?: DigitalHumanCameraMotion,
+  blendFromAction?: DigitalHumanActionId,
+  blendWeight = 1
 ) {
   const actionTmpl = getDigitalHumanActionTemplate(action);
+  const isBlendingPose = Boolean(blendFromAction && blendFromAction !== action && blendWeight < 1);
+  const fromActionTmpl = isBlendingPose && blendFromAction
+    ? getDigitalHumanActionTemplate(blendFromAction)
+    : null;
   const emotionPreset = getDigitalHumanEmotionPreset(emotion);
   const resolvedMuscles = clampFacialMuscles(muscles ?? emotionPreset.muscles);
   const activeTone =
@@ -1610,7 +1797,9 @@ export function renderDigitalHumanMiniStage(
       emotion,
       resolvedMuscles,
       cameraMotion,
-      loopProgress
+      loopProgress,
+      blendFromAction,
+      blendWeight
     );
   }
 
@@ -1627,8 +1816,8 @@ export function renderDigitalHumanMiniStage(
     voiceActivity
   );
 
-  // Live Pose Gesture Overlay on Mini Stage
-  drawDigitalHumanPoseOverlay(
+  // Live Pose Gesture Overlay on Mini Stage (with smooth Motion Blending cross-fade)
+  drawBlendedDigitalHumanPoseOverlay(
     ctx,
     action,
     0,
@@ -1638,12 +1827,14 @@ export function renderDigitalHumanMiniStage(
     timeSec,
     voiceActivity,
     activeTone,
-    1
+    1,
+    { blendFromAction, blendWeight }
   );
 
   // Action + Emotion pill badge top-left
   ctx.save();
-  const label = emotion !== 'neutral' ? `${actionTmpl.label}·${emotionPreset.label}` : actionTmpl.label;
+  const poseLabel = fromActionTmpl ? `${fromActionTmpl.label}→${actionTmpl.label}` : actionTmpl.label;
+  const label = emotion !== 'neutral' ? `${poseLabel}·${emotionPreset.label}` : poseLabel;
   const badgeW = Math.max(34, label.length * 9 + 12);
   ctx.fillStyle = 'rgba(9, 11, 16, 0.8)';
   ctx.strokeStyle = activeTone;

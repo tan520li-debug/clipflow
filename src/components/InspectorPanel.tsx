@@ -144,13 +144,18 @@ interface InspectorPanelProps {
   onUpdateClipDigitalHumanAction: (
     clipId: string,
     action: DigitalHumanActionId,
-    actionIntensity?: number
+    actionIntensity?: number,
+    options?: {
+      actionBlendDuration?: number;
+      blendFromAction?: DigitalHumanActionId;
+    }
   ) => void;
   onBatchApplyDigitalHumanActions?: (
     updates: Array<{
       clipId: string;
       action: DigitalHumanActionId;
       actionIntensity?: number;
+      actionBlendDuration?: number;
     }>
   ) => void;
   onUpdateClipDigitalHumanEmotion: (
@@ -1566,6 +1571,9 @@ export function InspectorPanel({
                     </div>
                     <div className="text-[10px] text-cyan-300 truncate mt-0.5">
                       姿态：{getDigitalHumanActionTemplate(selectedClip.digitalHuman.action).label}
+                      {(selectedClip.digitalHuman.actionBlendDuration ?? 0.45) > 0.02
+                        ? ` · 混合 ${(selectedClip.digitalHuman.actionBlendDuration ?? 0.45).toFixed(2)}s`
+                        : ''}
                       {selectedClip.digitalHuman.emotionMatchEnabled !== false &&
                       selectedClip.digitalHuman.emotion
                         ? ` · 情感：${getDigitalHumanEmotionPreset(selectedClip.digitalHuman.emotion).label}`

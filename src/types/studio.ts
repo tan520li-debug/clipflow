@@ -232,6 +232,7 @@ export interface DigitalHumanProfile {
   sampleAudioDurationSec?: number;
   accentColor?: string;
   defaultAction?: DigitalHumanActionId;
+  defaultActionBlendDuration?: number; // seconds (0 to 1.5)
   defaultEmotion?: DigitalHumanEmotionId;
   defaultFacialMuscles?: DigitalHumanFacialMuscles;
   defaultCameraMotion?: DigitalHumanCameraMotion;
@@ -251,6 +252,8 @@ export interface DigitalHumanClipConfig {
   showLiveWaveRing: boolean;
   action?: DigitalHumanActionId;
   actionIntensity?: number; // 0.5 to 1.5
+  actionBlendDuration?: number; // seconds (0 to 1.5), auto-interpolates from consecutive previous action
+  blendFromAction?: DigitalHumanActionId;
   emotionMatchEnabled?: boolean;
   emotion?: DigitalHumanEmotionId;
   facialMuscles?: DigitalHumanFacialMuscles;

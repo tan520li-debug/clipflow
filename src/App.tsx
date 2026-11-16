@@ -1256,22 +1256,32 @@ export default function App() {
   const handleUpdateClipDigitalHumanAction = (
     clipId: string,
     action: DigitalHumanActionId,
-    actionIntensity?: number
+    actionIntensity?: number,
+    options?: {
+      actionBlendDuration?: number;
+      blendFromAction?: DigitalHumanActionId;
+    }
   ) => {
     updateCurrentProject((prev) => ({
       ...prev,
-      clips: prev.clips.map((c) =>
-        c.id === clipId && c.digitalHuman
-          ? {
-              ...c,
-              digitalHuman: {
-                ...c.digitalHuman,
-                action,
-                actionIntensity: actionIntensity ?? c.digitalHuman.actionIntensity ?? 1,
-              },
-            }
-          : c
-      ),
+      clips: prev.clips.map((c) => {
+        if (c.id !== clipId || !c.digitalHuman) return c;
+        const prevAction = c.digitalHuman.action ?? 'explain';
+        const resolvedBlendFrom =
+          options?.blendFromAction ??
+          (prevAction !== action ? prevAction : c.digitalHuman.blendFromAction);
+        return {
+          ...c,
+          digitalHuman: {
+            ...c.digitalHuman,
+            action,
+            actionIntensity: actionIntensity ?? c.digitalHuman.actionIntensity ?? 1,
+            actionBlendDuration:
+              options?.actionBlendDuration ?? c.digitalHuman.actionBlendDuration ?? 0.45,
+            blendFromAction: resolvedBlendFrom,
+          },
+        };
+      }),
     }));
   };
 
@@ -1280,20 +1290,29 @@ export default function App() {
       clipId: string;
       action: DigitalHumanActionId;
       actionIntensity?: number;
+      actionBlendDuration?: number;
     }>
   ) => {
     const map = new Map(updates.map((u) => [u.clipId, u]));
     updateCurrentProject((prev) => ({
       ...prev,
-      clips: prev.clips.map((c) => {
+      clips: prev.clips.map((c, idx) => {
         const match = map.get(c.id);
         if (!match || !c.digitalHuman) return c;
+        const prevClipAction = idx > 0 ? prev.clips[idx - 1]?.digitalHuman?.action : undefined;
         return {
           ...c,
           digitalHuman: {
             ...c.digitalHuman,
             action: match.action,
             actionIntensity: match.actionIntensity ?? c.digitalHuman.actionIntensity ?? 1,
+            actionBlendDuration:
+              match.actionBlendDuration ?? c.digitalHuman.actionBlendDuration ?? 0.45,
+            blendFromAction:
+              prevClipAction ??
+              (c.digitalHuman.action && c.digitalHuman.action !== match.action
+                ? c.digitalHuman.action
+                : c.digitalHuman.blendFromAction),
           },
         };
       }),

@@ -85,13 +85,18 @@ interface DigitalHumanTabProps {
   onUpdateClipDigitalHumanAction: (
     clipId: string,
     action: DigitalHumanActionId,
-    actionIntensity?: number
+    actionIntensity?: number,
+    options?: {
+      actionBlendDuration?: number;
+      blendFromAction?: DigitalHumanActionId;
+    }
   ) => void;
   onBatchApplyDigitalHumanActions?: (
     updates: Array<{
       clipId: string;
       action: DigitalHumanActionId;
       actionIntensity?: number;
+      actionBlendDuration?: number;
     }>
   ) => void;
   onUpdateClipDigitalHumanEmotion: (
@@ -287,8 +292,16 @@ export function DigitalHumanTab({
   const [selectedAction, setSelectedAction] = useState<DigitalHumanActionId>(
     selectedClip?.digitalHuman?.action ?? digitalHumans[0]?.defaultAction ?? 'explain'
   );
+  const [previousAction, setPreviousAction] = useState<DigitalHumanActionId | null>(
+    selectedClip?.digitalHuman?.blendFromAction ?? null
+  );
   const [actionIntensity, setActionIntensity] = useState<number>(
     selectedClip?.digitalHuman?.actionIntensity ?? 1.0
+  );
+  const [actionBlendDuration, setActionBlendDuration] = useState<number>(
+    selectedClip?.digitalHuman?.actionBlendDuration ??
+      digitalHumans[0]?.defaultActionBlendDuration ??
+      0.45
   );
   const [actionSyncNotice, setActionSyncNotice] = useState<string | null>(null);
   const [autoActionSuggestEnabled, setAutoActionSuggestEnabled] = useState<boolean>(true);
@@ -354,6 +367,12 @@ export function DigitalHumanTab({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
+  const poseBlendRef = useRef<{
+    from: DigitalHumanActionId;
+    to: DigitalHumanActionId;
+    startPerf: number;
+    durationSec: number;
+  } | null>(null);
 
   const availableAnchors: DigitalHumanProfile[] = [
     ...digitalHumans,
@@ -365,6 +384,10 @@ export function DigitalHumanTab({
   const activeAnchor =
     availableAnchors.find((a) => a.id === activeAnchorId) ?? availableAnchors[0];
 
+  const selectedClipIndex = selectedClip ? clips.findIndex((c) => c.id === selectedClip.id) : -1;
+  const prevTimelineAction =
+    selectedClipIndex > 0 ? clips[selectedClipIndex - 1]?.digitalHuman?.action ?? null : null;
+
   useEffect(() => {
     if (selectedClip?.digitalHuman) {
       setPipPosition(selectedClip.digitalHuman.pipPosition);
@@ -374,8 +397,14 @@ export function DigitalHumanTab({
       if (selectedClip.digitalHuman.action) {
         setSelectedAction(selectedClip.digitalHuman.action);
       }
+      if (selectedClip.digitalHuman.blendFromAction) {
+        setPreviousAction(selectedClip.digitalHuman.blendFromAction);
+      }
       if (typeof selectedClip.digitalHuman.actionIntensity === 'number') {
         setActionIntensity(selectedClip.digitalHuman.actionIntensity);
+      }
+      if (typeof selectedClip.digitalHuman.actionBlendDuration === 'number') {
+        setActionBlendDuration(selectedClip.digitalHuman.actionBlendDuration);
       }
       if (typeof selectedClip.digitalHuman.emotionMatchEnabled === 'boolean') {
         setEmotionMatchEnabled(selectedClip.digitalHuman.emotionMatchEnabled);
@@ -464,6 +493,26 @@ export function DigitalHumanTab({
           const act = isPreviewingMiniStage
             ? 0.48 + 0.45 * Math.abs(Math.sin(t * 11.5) * Math.cos(t * 4.3))
             : 0.24 + 0.14 * Math.abs(Math.sin(t * 3.6));
+
+          let blendFrom: DigitalHumanActionId | undefined;
+          let blendW = 1;
+          const activeTransition = poseBlendRef.current;
+          if (
+            activeTransition &&
+            activeTransition.to === selectedAction &&
+            activeTransition.from !== selectedAction &&
+            activeTransition.durationSec > 0.02
+          ) {
+            const elapsed = (now - activeTransition.startPerf) / 1000;
+            if (elapsed < activeTransition.durationSec) {
+              const rawT = Math.max(0, Math.min(1, elapsed / activeTransition.durationSec));
+              blendFrom = activeTransition.from;
+              blendW = rawT * rawT * (3 - 2 * rawT);
+            } else {
+              poseBlendRef.current = null;
+            }
+          }
+
           renderDigitalHumanMiniStage(
             ctx,
             canvas.width,
@@ -475,7 +524,9 @@ export function DigitalHumanTab({
             selectedAction,
             emotionMatchEnabled ? selectedEmotion : 'neutral',
             emotionMatchEnabled ? facialMuscles : undefined,
-            cameraMotion
+            cameraMotion,
+            blendFrom,
+            blendW
           );
         }
       }
@@ -707,6 +758,7 @@ export function DigitalHumanTab({
       sampleAudioDurationSec,
       accentColor: aiAccent,
       defaultAction: selectedAction,
+      defaultActionBlendDuration: actionBlendDuration,
       defaultEmotion: selectedEmotion,
       defaultFacialMuscles: facialMuscles,
       defaultCameraMotion: cameraMotion,
@@ -812,6 +864,10 @@ export function DigitalHumanTab({
     showLiveWaveRing,
     action: selectedAction,
     actionIntensity,
+    actionBlendDuration,
+    blendFromAction:
+      prevTimelineAction ??
+      (previousAction && previousAction !== selectedAction ? previousAction : undefined),
     emotionMatchEnabled,
     emotion: selectedEmotion,
     facialMuscles,
@@ -973,15 +1029,48 @@ export function DigitalHumanTab({
     }
   };
 
+  const triggerMiniStageBlendPreview = (
+    fromAct: DigitalHumanActionId,
+    toAct: DigitalHumanActionId,
+    durationSec: number
+  ) => {
+    if (fromAct !== toAct && durationSec > 0.02) {
+      poseBlendRef.current = {
+        from: fromAct,
+        to: toAct,
+        startPerf: performance.now(),
+        durationSec,
+      };
+    } else {
+      poseBlendRef.current = null;
+    }
+  };
+
   const handleSelectActionTemplate = (actionId: DigitalHumanActionId) => {
     const tmpl = getDigitalHumanActionTemplate(actionId);
+    const prevAct = selectedAction;
+    if (prevAct !== actionId) {
+      setPreviousAction(prevAct);
+      triggerMiniStageBlendPreview(prevAct, actionId, actionBlendDuration);
+    }
     setSelectedAction(actionId);
     setActionIntensity(tmpl.recommendedIntensity);
+    const blendSource = prevTimelineAction ?? (prevAct !== actionId ? prevAct : previousAction ?? undefined);
     if (selectedClip?.digitalHuman) {
-      onUpdateClipDigitalHumanAction(selectedClip.id, actionId, tmpl.recommendedIntensity);
-      setActionSyncNotice(`已为当前片段「${selectedClip.label}」分配「${tmpl.label}」姿态，播放与导出将自动调用对应动作驱动。`);
+      onUpdateClipDigitalHumanAction(selectedClip.id, actionId, tmpl.recommendedIntensity, {
+        actionBlendDuration,
+        blendFromAction: blendSource,
+      });
+      if (prevAct !== actionId && actionBlendDuration > 0.02) {
+        const fromTmpl = getDigitalHumanActionTemplate(prevAct);
+        setActionSyncNotice(
+          `已为片段「${selectedClip.label}」分配「${tmpl.label}」姿态，并开启 ${actionBlendDuration.toFixed(2)}s 自动动作插值（${fromTmpl.label} → ${tmpl.label}）。`
+        );
+      } else {
+        setActionSyncNotice(`已为当前片段「${selectedClip.label}」分配「${tmpl.label}」姿态，播放与导出将自动调用对应动作驱动。`);
+      }
     } else {
-      setActionSyncNotice(`已选定「${tmpl.label}」动作模板，嵌入或插入视频轨时将自动绑定该姿态驱动。`);
+      setActionSyncNotice(`已选定「${tmpl.label}」动作模板，嵌入或插入视频轨时将自动绑定该姿态与动作混合过渡。`);
     }
   };
 
@@ -1053,11 +1142,16 @@ export function DigitalHumanTab({
       clipId: s.clipId,
       action: s.recommendedAction,
       actionIntensity: s.recommendedIntensity,
+      actionBlendDuration,
     }));
     onBatchApplyDigitalHumanActions(updates);
     if (selectedClip) {
       const matched = updates.find((u) => u.clipId === selectedClip.id);
       if (matched) {
+        if (selectedAction !== matched.action) {
+          setPreviousAction(selectedAction);
+          triggerMiniStageBlendPreview(selectedAction, matched.action, actionBlendDuration);
+        }
         setSelectedAction(matched.action);
         if (typeof matched.actionIntensity === 'number') {
           setActionIntensity(matched.actionIntensity);
@@ -1066,7 +1160,7 @@ export function DigitalHumanTab({
     }
     const dhCount = clips.filter((c) => Boolean(c.digitalHuman)).length;
     setActionSyncNotice(
-      `已根据脚本分镜语境，一键为时间线上 ${dhCount} 个数字人镜头匹配对应动作姿态！`
+      `已根据脚本分镜语境，一键为时间线上 ${dhCount} 个数字人镜头匹配对应动作姿态及 ${actionBlendDuration.toFixed(2)}s 平滑过渡！`
     );
   };
 
@@ -1698,26 +1792,107 @@ export function DigitalHumanTab({
             {getDigitalHumanActionTemplate(selectedAction).summary}
           </p>
 
-          <div className="pt-1 border-t border-zinc-800/80">
-            <div className="flex items-center justify-between text-[10px] text-zinc-400 mb-1">
-              <span>动作姿态幅度</span>
-              <span className="font-mono-nums text-cyan-300">{actionIntensity.toFixed(2)}x</span>
+          <div className="pt-1 border-t border-zinc-800/80 space-y-2.5">
+            <div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-400 mb-1">
+                <span>动作姿态幅度</span>
+                <span className="font-mono-nums text-cyan-300">{actionIntensity.toFixed(2)}x</span>
+              </div>
+              <input
+                type="range"
+                min={0.6}
+                max={1.4}
+                step={0.05}
+                value={actionIntensity}
+                onChange={(e) => {
+                  const nextVal = Number(e.target.value);
+                  setActionIntensity(nextVal);
+                  if (selectedClip?.digitalHuman) {
+                    onUpdateClipDigitalHumanAction(selectedClip.id, selectedAction, nextVal, {
+                      actionBlendDuration,
+                    });
+                  }
+                }}
+                className="w-full accent-cyan-400"
+              />
             </div>
-            <input
-              type="range"
-              min={0.6}
-              max={1.4}
-              step={0.05}
-              value={actionIntensity}
-              onChange={(e) => {
-                const nextVal = Number(e.target.value);
-                setActionIntensity(nextVal);
-                if (selectedClip?.digitalHuman) {
-                  onUpdateClipDigitalHumanAction(selectedClip.id, selectedAction, nextVal);
-                }
-              }}
-              className="w-full accent-cyan-400"
-            />
+
+            {/* Motion Blending Slider */}
+            <div className="pt-1.5 border-t border-zinc-800/70 space-y-1">
+              <div className="flex items-center justify-between text-[10px]">
+                <label htmlFor="dh-motion-blend-slider" className="text-zinc-300 font-medium">
+                  动作混合 (Motion Blending)
+                </label>
+                <span className="font-mono-nums text-cyan-300">
+                  {actionBlendDuration <= 0.02
+                    ? '关闭 (硬切)'
+                    : `${actionBlendDuration.toFixed(2)}s 自动插值`}
+                </span>
+              </div>
+              <input
+                id="dh-motion-blend-slider"
+                type="range"
+                min={0}
+                max={1.5}
+                step={0.05}
+                value={actionBlendDuration}
+                onChange={(e) => {
+                  const nextBlend = Number(e.target.value);
+                  setActionBlendDuration(nextBlend);
+                  if (selectedClip?.digitalHuman) {
+                    onUpdateClipDigitalHumanAction(
+                      selectedClip.id,
+                      selectedAction,
+                      actionIntensity,
+                      {
+                        actionBlendDuration: nextBlend,
+                        blendFromAction:
+                          prevTimelineAction ??
+                          (previousAction && previousAction !== selectedAction
+                            ? previousAction
+                            : undefined),
+                      }
+                    );
+                  }
+                }}
+                className="w-full accent-cyan-400"
+              />
+              {(() => {
+                const rawPrev =
+                  prevTimelineAction && prevTimelineAction !== selectedAction
+                    ? prevTimelineAction
+                    : previousAction && previousAction !== selectedAction
+                      ? previousAction
+                      : null;
+                const demoFrom: DigitalHumanActionId =
+                  rawPrev ?? (selectedAction === 'wave' ? 'point' : selectedAction === 'point' ? 'wave' : 'point');
+                const demoTo: DigitalHumanActionId =
+                  rawPrev ? selectedAction : selectedAction === 'point' ? 'wave' : selectedAction;
+                return (
+                  <div className="flex items-center justify-between gap-2 text-[9px] text-zinc-400">
+                    <span className="truncate">
+                      {rawPrev
+                        ? `过渡：${getDigitalHumanActionTemplate(rawPrev).label} → ${getDigitalHumanActionTemplate(selectedAction).label}`
+                        : '连续动作切换时自动平滑插值（如 指引 → 挥手）'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={actionBlendDuration <= 0.02}
+                      onClick={() => {
+                        if (demoTo !== selectedAction) {
+                          setSelectedAction(demoTo);
+                        }
+                        setPreviousAction(demoFrom);
+                        triggerMiniStageBlendPreview(demoFrom, demoTo, actionBlendDuration);
+                      }}
+                      className="px-1.5 py-0.5 rounded border border-cyan-500/45 bg-cyan-950/35 hover:bg-cyan-900/45 disabled:opacity-40 text-[9px] font-semibold text-cyan-200 shrink-0 transition-colors"
+                    >
+                      预览过渡
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
 
           {actionSyncNotice && (
