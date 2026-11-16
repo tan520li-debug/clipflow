@@ -1,0 +1,6 @@
+{
+  "name": "ClipFlow Studio",
+  "description": "面向抖音、TikTok 与 Facebook Reels 的多平台短视频生成与智能自动剪辑工作台。",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

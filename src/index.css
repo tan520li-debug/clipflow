@@ -1,0 +1,179 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', 'Noto Sans SC', sans-serif;
+    --font-sans: 'DM Sans', 'Noto Sans SC', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #0B0D10;
+    color: #F4F4F5;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom slim studio scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.22);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.38);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Micro transition preview animations (compositor-only: transform & opacity) */
+@keyframes tr-cut-a {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes tr-cut-b {
+  0%, 49% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+
+@keyframes tr-fade-a {
+  0%, 25% { opacity: 1; }
+  65%, 100% { opacity: 0; }
+}
+@keyframes tr-fade-b {
+  0%, 25% { opacity: 0; }
+  65%, 100% { opacity: 1; }
+}
+
+@keyframes tr-zoom-a {
+  0%, 35% { opacity: 1; transform: scale(1); }
+  55%, 100% { opacity: 0; transform: scale(1.12); }
+}
+@keyframes tr-zoom-b {
+  0%, 35% { opacity: 0; transform: scale(1.42); }
+  62%, 100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes tr-spin-a {
+  0%, 30% { opacity: 1; transform: rotate(0deg) scale(1); }
+  58%, 100% { opacity: 0; transform: rotate(-24deg) scale(1.18); }
+}
+@keyframes tr-spin-b {
+  0%, 30% { opacity: 0; transform: rotate(24deg) scale(1.24); }
+  64%, 100% { opacity: 1; transform: rotate(0deg) scale(1); }
+}
+
+@keyframes tr-whip-a {
+  0%, 32% { transform: translateX(0%); }
+  58%, 100% { transform: translateX(-100%); }
+}
+@keyframes tr-whip-b {
+  0%, 32% { transform: translateX(100%); }
+  58%, 100% { transform: translateX(0%); }
+}
+
+@keyframes tr-flash-overlay {
+  0%, 42% { opacity: 0; }
+  50% { opacity: 0.95; }
+  64%, 100% { opacity: 0; }
+}
+
+.anim-tr-cut-a { animation: tr-cut-a 1.8s infinite; }
+.anim-tr-cut-b { animation: tr-cut-b 1.8s infinite; }
+.anim-tr-fade-a { animation: tr-fade-a 2.0s ease-in-out infinite; }
+.anim-tr-fade-b { animation: tr-fade-b 2.0s ease-in-out infinite; }
+.anim-tr-zoom-a { animation: tr-zoom-a 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-zoom-b { animation: tr-zoom-b 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-spin-a { animation: tr-spin-a 2.0s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-spin-b { animation: tr-spin-b 2.0s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-whip-a { animation: tr-whip-a 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-whip-b { animation: tr-whip-b 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-flash-overlay { animation: tr-flash-overlay 1.8s ease-out infinite; }
+
+@keyframes tr-blur-a {
+  0%, 24% { opacity: 1; filter: blur(0px); }
+  62%, 100% { opacity: 0; filter: blur(4px); }
+}
+@keyframes tr-blur-b {
+  0%, 24% { opacity: 0; filter: blur(4px); }
+  62%, 100% { opacity: 1; filter: blur(0px); }
+}
+
+@keyframes tr-push-a {
+  0%, 30% { transform: translateY(0%); }
+  62%, 100% { transform: translateY(-100%); }
+}
+@keyframes tr-push-b {
+  0%, 30% { transform: translateY(100%); }
+  62%, 100% { transform: translateY(0%); }
+}
+
+@keyframes tr-flip-a {
+  0%, 25% { opacity: 1; transform: scaleX(1); }
+  49% { opacity: 1; transform: scaleX(0.02); }
+  50%, 100% { opacity: 0; transform: scaleX(0.02); }
+}
+@keyframes tr-flip-b {
+  0%, 49% { opacity: 0; transform: scaleX(0.02); }
+  50% { opacity: 1; transform: scaleX(0.02); }
+  78%, 100% { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes tr-iris-b {
+  0%, 28% { opacity: 0; transform: scale(0.08); }
+  66%, 100% { opacity: 1; transform: scale(1.45); }
+}
+
+@keyframes tr-curtain-left {
+  0%, 28% { transform: translateX(0%); }
+  66%, 100% { transform: translateX(-100%); }
+}
+@keyframes tr-curtain-right {
+  0%, 28% { transform: translateX(0%); }
+  66%, 100% { transform: translateX(100%); }
+}
+
+@keyframes tr-glitch-slice {
+  0%, 38% { opacity: 0; transform: translateX(0); }
+  44% { opacity: 0.95; transform: translateX(-7px); }
+  50% { opacity: 0.95; transform: translateX(7px); }
+  58%, 100% { opacity: 0; transform: translateX(0); }
+}
+
+.anim-tr-blur-a { animation: tr-blur-a 2.0s ease-in-out infinite; }
+.anim-tr-blur-b { animation: tr-blur-b 2.0s ease-in-out infinite; }
+.anim-tr-push-a { animation: tr-push-a 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-push-b { animation: tr-push-b 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-flip-a { animation: tr-flip-a 2.0s ease-in-out infinite; }
+.anim-tr-flip-b { animation: tr-flip-b 2.0s ease-in-out infinite; }
+.anim-tr-iris-b { animation: tr-iris-b 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-curtain-left { animation: tr-curtain-left 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-curtain-right { animation: tr-curtain-right 1.9s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.anim-tr-glitch-slice { animation: tr-glitch-slice 1.8s linear infinite; }
+
+
