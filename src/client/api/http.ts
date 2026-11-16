@@ -4,6 +4,13 @@ import { externalizeJsonBody } from './externalizeMedia';
 
 const JOB_POLL_INTERVAL_MS = 800;
 const JOB_POLL_TIMEOUT_MS = 120_000;
+const VIDEO_JOB_POLL_TIMEOUT_MS = 360_000;
+
+function pollTimeoutMs(input: string): number {
+  return input.includes('/api/digital-human/talking-video')
+    ? VIDEO_JOB_POLL_TIMEOUT_MS
+    : JOB_POLL_TIMEOUT_MS;
+}
 
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -21,7 +28,12 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   if (!jobId) return response;
   await cancelUnusedBody(response);
   const origin = requestOrigin(response, input);
-  return pollJob(jobEndpoint(origin, jobId), jobEndpoint(origin, jobId, '/result'), authHeaders(headers));
+  return pollJob(
+    jobEndpoint(origin, jobId),
+    jobEndpoint(origin, jobId, '/result'),
+    authHeaders(headers),
+    pollTimeoutMs(input),
+  );
 }
 
 async function readAcceptedJobId(response: Response): Promise<string | null> {
@@ -100,8 +112,13 @@ interface JobSnapshot {
   error?: unknown;
 }
 
-async function pollJob(statusUrl: string, resultUrl: string, headers: Headers): Promise<Response> {
-  const deadline = Date.now() + JOB_POLL_TIMEOUT_MS;
+async function pollJob(
+  statusUrl: string,
+  resultUrl: string,
+  headers: Headers,
+  timeoutMs = JOB_POLL_TIMEOUT_MS,
+): Promise<Response> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const snapshot = await fetchJobSnapshot(statusUrl, headers);
     if (snapshot?.status === 'succeeded' && snapshot.resultKind === 'binary') {

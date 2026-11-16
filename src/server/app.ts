@@ -9,15 +9,17 @@ import { expandMediaRefs } from './media/blobs.ts';
 import { registerDigitalHumanRoutes } from './routes/digitalHuman.ts';
 import { registerEditRoutes } from './routes/edit.ts';
 import { registerExportRoutes } from './routes/export.ts';
+import { registerTalkingVideoRoute } from './routes/talkingVideo.ts';
 import { registerJobRoutes } from './routes/jobs.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerVoiceRoutes } from './routes/voice.ts';
+import { resolveListenPort } from './listenPort.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = resolveListenPort(process.env.PORT);
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '16mb' }));
@@ -54,6 +56,7 @@ registerMediaRoutes(app);
 registerEditRoutes(app);
 registerVoiceRoutes(app);
 registerDigitalHumanRoutes(app);
+registerTalkingVideoRoute(app);
 registerExportRoutes(app);
 registerJobRoutes(app);
 

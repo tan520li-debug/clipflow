@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import type { WorkspaceView } from '../types/studio';
+import { ADMIN_TOKEN_STORAGE_KEY } from '../utils/i18n';
 
 interface TopBarProps {
   activeView: WorkspaceView;
@@ -6,7 +8,30 @@ interface TopBarProps {
   onOpenExport: () => void;
 }
 
+function readStoredToken(): string {
+  try {
+    return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeStoredToken(token: string) {
+  try {
+    if (token) window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+    else window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {
+    // ignore storage restrictions
+  }
+}
+
 export function TopBar({ activeView, onChangeView, onOpenExport }: TopBarProps) {
+  const [accessToken, setAccessToken] = useState('');
+
+  useEffect(() => {
+    setAccessToken(readStoredToken());
+  }, []);
+
   const navItems: Array<{ id: WorkspaceView; label: string }> = [
     { id: 'editor', label: '自动剪辑台' },
     { id: 'matrix', label: '三端成片对比' },
@@ -44,7 +69,20 @@ export function TopBar({ activeView, onChangeView, onOpenExport }: TopBarProps) 
         })}
       </nav>
 
-      <div className="shrink-0">
+      <div className="shrink-0 flex items-center gap-2">
+        <input
+          type="password"
+          autoComplete="off"
+          aria-label="访问令牌"
+          placeholder="访问令牌"
+          value={accessToken}
+          onChange={(event) => {
+            const next = event.target.value;
+            setAccessToken(next);
+            writeStoredToken(next.trim());
+          }}
+          className="w-32 rounded-lg border border-zinc-700 bg-[#11141B] px-2.5 py-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500"
+        />
         <button
           type="button"
           onClick={onOpenExport}

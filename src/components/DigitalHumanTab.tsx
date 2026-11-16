@@ -212,6 +212,10 @@ export function DigitalHumanTab({
   );
   const [drivingSpeech, setDrivingSpeech] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
+  const [talkingVideoBusy, setTalkingVideoBusy] = useState(false);
+  const [talkingVideoError, setTalkingVideoError] = useState<string | null>(null);
+  const [talkingVideoUrl, setTalkingVideoUrl] = useState<string | null>(null);
+  const talkingVideoUrlRef = useRef<string | null>(null);
   const [drivenAudio, setDrivenAudio] = useState<{
     audioBase64: string;
     mimeType: string;
@@ -363,6 +367,41 @@ export function DigitalHumanTab({
 
   const activeAnchor =
     availableAnchors.find((a) => a.id === activeAnchorId) ?? availableAnchors[0];
+
+  const handleGenerateTalkingVideo = async () => {
+    const line = scriptText.trim();
+    if (!line || talkingVideoBusy || !activeAnchor) return;
+    setTalkingVideoBusy(true);
+    setTalkingVideoError(null);
+    try {
+      const dataUrl = activeAnchor.avatarUrl.startsWith('data:image/') ? activeAnchor.avatarUrl : '';
+      const mimeEnd = dataUrl.indexOf(';');
+      const imageMimeType = mimeEnd > 5 ? dataUrl.slice(5, mimeEnd) : '';
+      const res = await apiFetch('/api/digital-human/talking-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scriptText: line,
+          imageBase64: dataUrl,
+          imageMimeType,
+        }),
+      });
+      const type = res.headers.get('content-type') || '';
+      if (!res.ok || type.includes('application/json')) {
+        const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+        throw new Error(typeof data.error === 'string' ? data.error : '说话视频没有生成。');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (talkingVideoUrlRef.current) URL.revokeObjectURL(talkingVideoUrlRef.current);
+      talkingVideoUrlRef.current = url;
+      setTalkingVideoUrl(url);
+    } catch (err: unknown) {
+      setTalkingVideoError(err instanceof Error ? err.message : '说话视频没有生成。');
+    } finally {
+      setTalkingVideoBusy(false);
+    }
+  };
 
   const selectedClipIndex = selectedClip ? clips.findIndex((c) => c.id === selectedClip.id) : -1;
   const prevTimelineAction =
@@ -1195,24 +1234,36 @@ export function DigitalHumanTab({
               </div>
             </div>
 
-            {/* Disabled Veo Photorealistic Talking Video Action */}
-            <div className="pt-1.5 border-t border-zinc-800/80 flex items-center justify-between gap-2">
-              <span className="text-[10px] text-zinc-500 leading-tight">
-                Veo 写实口播视频模型适配中
-              </span>
-              <button
-                type="button"
-                disabled
-                aria-disabled="true"
-                title="Veo 写实口播视频生成即将接入，当前请使用下方画布口型与动作驱动"
-                className="px-2.5 py-1 rounded-md border border-zinc-700/80 bg-zinc-900/80 text-[11px] font-medium text-zinc-400 cursor-not-allowed opacity-75 flex items-center gap-1.5 shrink-0"
-              >
-                <Film className="w-3 h-3 text-zinc-500" />
-                <span>生成说话视频</span>
-                <span className="px-1 py-0.2 rounded bg-zinc-800 border border-zinc-700 text-[9px] text-amber-300/90">
-                  即将接入
+            <div className="pt-1.5 border-t border-zinc-800/80 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-zinc-500 leading-tight">
+                  用当前台词生成一段竖屏说话视频
                 </span>
-              </button>
+                <button
+                  type="button"
+                  disabled={talkingVideoBusy || !scriptText.trim()}
+                  onClick={() => void handleGenerateTalkingVideo()}
+                  title="调用 Veo 生成写实口播视频，会消耗视频生成额度"
+                  className="px-2.5 py-1 rounded-md border border-cyan-700/70 bg-cyan-950/40 text-[11px] font-medium text-cyan-100 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                >
+                  {talkingVideoBusy ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Film className="w-3 h-3 text-cyan-300" />
+                  )}
+                  <span>{talkingVideoBusy ? '正在生成' : '生成说话视频'}</span>
+                </button>
+              </div>
+              {talkingVideoError && (
+                <p className="text-[10px] text-rose-300 leading-snug">{talkingVideoError}</p>
+              )}
+              {talkingVideoUrl && (
+                <video
+                  src={talkingVideoUrl}
+                  controls
+                  className="w-full max-h-48 rounded-md bg-black"
+                />
+              )}
             </div>
           </div>
         )}

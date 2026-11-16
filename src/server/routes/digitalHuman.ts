@@ -963,4 +963,67 @@ ${cleanAudio ? '- 已附带原主播真实人声参考音频，请仔细听辨�
   }
   return null;
 }));
+
+app.post('/api/digital-human/reply', acceptJsonJob('digital-human/reply', async (req, res) => {
+  try {
+    const { anchorName = '虚拟主播', personaSummary = '', userLine = '', history = [] } = req.body ?? {};
+    const line = typeof userLine === 'string' ? userLine.trim() : '';
+    const turns = Array.isArray(history)
+      ? history
+          .filter(
+            (turn: { role?: unknown; text?: unknown }) =>
+              (turn?.role === 'user' || turn?.role === 'anchor') &&
+              typeof turn.text === 'string' &&
+              turn.text.trim(),
+          )
+          .slice(-8)
+          .map((turn: { role: string; text: string }) => `${turn.role === 'user' ? '观众' : '主播'}：${turn.text.trim()}`)
+          .join('\n')
+      : '';
+    const ai = getGeminiClient();
+    const response = await generateTextContentWithFallback(ai, {
+      contents: {
+        parts: [
+          {
+            text: `你是短视频虚拟主播「${String(anchorName).trim() || '虚拟主播'}」。人设：${String(personaSummary).trim() || '亲切、清楚、适合口播'}。
+用一句到三句口语中文回答观众，适合直接念出来。不要标题，不要表情符号，不要提你是模型。
+已有对话：
+${turns || '（还没有）'}
+观众刚说：${line}`,
+          },
+        ],
+      },
+      config: {
+        thinkingConfig: { thinkingLevel: 'LOW' },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reply: { type: Type.STRING, description: 'Spoken Simplified Chinese reply, 12-80 characters.' },
+          },
+        },
+      },
+    });
+    const parsed = JSON.parse((response.text ?? '{}').trim()) as { reply?: unknown };
+    const reply = typeof parsed.reply === 'string' ? parsed.reply.trim() : '';
+    if (!reply) {
+      return res.status(502).json({ error: '主播这次没有答上话，请再试一次。' });
+    }
+    return res.json({ reply });
+  } catch (err: unknown) {
+    console.error('[api/digital-human/reply] error:', err);
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({ error: '对话额度已用完，请稍后再试。' });
+    }
+    if (isServiceBusyError(err)) {
+      return res.status(503).json({ error: '对话服务正忙，请稍后重试。' });
+    }
+    return res.status(500).json({ error: '主播回答失败，请稍后重试。' });
+  }
+}, (req) => {
+  const line = typeof req.body?.userLine === 'string' ? req.body.userLine.trim() : '';
+  if (!line) return { status: 400, body: { error: '请先输入要对主播说的话。' } };
+  if (line.length > 500) return { status: 400, body: { error: '这句话太长了，请缩到 500 字以内。' } };
+  return null;
+}));
 }

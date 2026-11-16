@@ -2,6 +2,12 @@ import type { ClonedVoiceProfile, DigitalHumanProfile, MediaAsset } from '../../
 import { BUILTIN_MEDIA_ASSETS } from '../../utils/autoEditEngine';
 import { BUILTIN_DIGITAL_HUMAN_PRESETS } from '../../utils/digitalHumanAssets';
 import { readRecord, writeRecord } from './recordsDb';
+import {
+  compactStudioSession,
+  normalizeStudioSession,
+  STUDIO_SESSION_STORAGE_KEY,
+  type StudioSessionSnapshot,
+} from './studioSession';
 
 export const DH_PROFILES_STORAGE_KEY = 'clipflow_digital_humans_v1';
 export const DH_UPLOADED_ASSETS_STORAGE_KEY = 'clipflow_dh_uploaded_assets_v1';
@@ -17,6 +23,7 @@ export interface StudioLibrarySnapshot {
   digitalHumans: DigitalHumanProfile[];
   clonedVoices: ClonedVoiceProfile[];
   assets: MediaAsset[];
+  session: StudioSessionSnapshot | null;
 }
 
 const pendingMigrations = new Map<string, Promise<unknown>>();
@@ -102,7 +109,7 @@ export function normalizeStoredClonedVoices(raw: unknown): ClonedVoiceProfile[] 
   return Array.isArray(raw) ? (raw as ClonedVoiceProfile[]) : [];
 }
 
-/** Rebuild the asset list the way the editor used to on startup. Timeline state is not included. */
+/** Rebuild the asset list the way the editor used to on startup. */
 export function assembleLibraryAssets(uploadedRaw: unknown, profilesRaw: unknown): MediaAsset[] {
   const persistedAssets: MediaAsset[] = [];
   const seenIds = new Set<string>(BUILTIN_MEDIA_ASSETS.map((asset) => asset.id));
@@ -170,15 +177,17 @@ export function mergeHydratedAssets(current: MediaAsset[], hydrated: MediaAsset[
 }
 
 export async function loadStudioLibrary(): Promise<StudioLibrarySnapshot> {
-  const [profilesRaw, uploadedRaw, voicesRaw] = await Promise.all([
+  const [profilesRaw, uploadedRaw, voicesRaw, sessionRaw] = await Promise.all([
     readMigratedRecord(DH_PROFILES_STORAGE_KEY),
     readMigratedRecord(DH_UPLOADED_ASSETS_STORAGE_KEY),
     readMigratedRecord(CLONED_VOICES_STORAGE_KEY),
+    readMigratedRecord(STUDIO_SESSION_STORAGE_KEY),
   ]);
   return {
     digitalHumans: normalizeStoredDigitalHumans(profilesRaw),
     clonedVoices: normalizeStoredClonedVoices(voicesRaw),
     assets: assembleLibraryAssets(uploadedRaw, profilesRaw),
+    session: normalizeStudioSession(sessionRaw),
   };
 }
 
@@ -222,6 +231,20 @@ export function saveClonedVoices(voices: ClonedVoiceProfile[]): Promise<void> {
       clearLegacyLocalStorage(CLONED_VOICES_STORAGE_KEY);
     } catch {
       // ignore storage quota errors
+    }
+  });
+}
+
+export function saveStudioSession(session: StudioSessionSnapshot): Promise<void> {
+  return enqueueSave(STUDIO_SESSION_STORAGE_KEY, async () => {
+    try {
+      await writeRecord(STUDIO_SESSION_STORAGE_KEY, session);
+    } catch {
+      try {
+        await writeRecord(STUDIO_SESSION_STORAGE_KEY, compactStudioSession(session));
+      } catch {
+        // ignore storage quota errors
+      }
     }
   });
 }

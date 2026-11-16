@@ -1,4 +1,4 @@
-import { type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { type Dispatch, type RefObject, type SetStateAction, useState } from 'react';
 import { Loader2, Mic, Play, Sparkles, Square, Upload } from 'lucide-react';
 import type {
   ClonedVoiceProfile,
@@ -103,8 +103,10 @@ export function DriveSection({
   selectedClipStartTime,
   subtitles,
 }: DriveSectionProps) {
-  const handleSynthesizeAnchorSpeech = async () => {
-    if (!activeAnchor || !scriptText.trim()) return;
+  const handleSynthesizeAnchorSpeech = async (spoken?: string) => {
+    const line = (spoken ?? scriptText).trim();
+    if (!activeAnchor || !line) return;
+    if (spoken) setScriptText(spoken);
     setDrivingSpeech(true);
     setDriveError(null);
     const boundClone = activeAnchor.clonedVoiceId
@@ -117,7 +119,7 @@ export function DriveSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           anchorName: activeAnchor.name,
-          scriptText: scriptText.trim(),
+          scriptText: line,
           baseVoice: boundClone ? boundClone.baseVoice : activeAnchor.baseVoice,
           voiceDesignPrompt: boundClone
             ? boundClone.voiceDesignPrompt
@@ -141,7 +143,7 @@ export function DriveSection({
         audioBase64: data.audioBase64,
         mimeType: mime,
         durationSec: dur,
-        text: scriptText.trim(),
+        text: line,
         segmentCount: segCount,
       });
       setFullClipDuration(Number(Math.max(2, dur + 0.2).toFixed(1)));
@@ -155,12 +157,49 @@ export function DriveSection({
       }
       playAudioSnippet(data.audioBase64, mime);
       if (emotionMatchEnabled) {
-        void handleAnalyzeVoiceEmotion(data.audioBase64, mime, scriptText.trim());
+        void handleAnalyzeVoiceEmotion(data.audioBase64, mime, line);
       }
     } catch (err: unknown) {
       setDriveError(err instanceof Error ? err.message : '数字人语音驱动失败。');
     } finally {
       setDrivingSpeech(false);
+    }
+  };
+
+  const [dialogueLine, setDialogueLine] = useState('');
+  const [dialogueTurns, setDialogueTurns] = useState<Array<{ role: 'user' | 'anchor'; text: string }>>([]);
+  const [replying, setReplying] = useState(false);
+
+  const handleAnchorReply = async () => {
+    const line = dialogueLine.trim();
+    if (!line || replying || drivingSpeech) return;
+    setReplying(true);
+    setDriveError(null);
+    try {
+      const res = await apiFetch('/api/digital-human/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          anchorName: activeAnchor.name,
+          personaSummary: activeAnchor.personaSummary,
+          history: dialogueTurns,
+          userLine: line,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || typeof data?.reply !== 'string' || !data.reply.trim()) {
+        throw new Error(data?.error || '主播这次没有答上话。');
+      }
+      const reply = data.reply.trim();
+      setDialogueTurns((current) =>
+        [...current, { role: 'user' as const, text: line }, { role: 'anchor' as const, text: reply }].slice(-8),
+      );
+      setDialogueLine('');
+      await handleSynthesizeAnchorSpeech(reply);
+    } catch (err: unknown) {
+      setDriveError(err instanceof Error ? err.message : '主播回答失败。');
+    } finally {
+      setReplying(false);
     }
   };
 
@@ -246,6 +285,40 @@ export function DriveSection({
                   ? `预估时长 ≈ ${speechEstimate.durationSec.toFixed(1)}s`
                   : '预估时长 0.0s'}
               </span>
+            </div>
+            <div className="rounded-md border border-zinc-800 bg-[#0E1116] p-2 space-y-1.5">
+              <label htmlFor="dh-dialogue-input" className="block text-[11px] text-zinc-400">
+                对主播说一句，让主播回答并开口
+              </label>
+              {dialogueTurns.length > 0 && (
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {dialogueTurns.map((turn, index) => (
+                    <p
+                      key={`${turn.role}-${index}`}
+                      className={`text-[10px] leading-snug ${turn.role === 'anchor' ? 'text-cyan-200' : 'text-zinc-400'}`}
+                    >
+                      {turn.role === 'anchor' ? '主播' : '你'}：{turn.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1.5">
+                <input
+                  id="dh-dialogue-input"
+                  value={dialogueLine}
+                  onChange={(e) => setDialogueLine(e.target.value)}
+                  placeholder="例如：这杯要几克豆子？"
+                  className="min-w-0 flex-1 rounded-md bg-[#11141B] border border-zinc-800 px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-cyan-500"
+                />
+                <button
+                  type="button"
+                  disabled={replying || drivingSpeech || !dialogueLine.trim()}
+                  onClick={() => void handleAnchorReply()}
+                  className="shrink-0 px-2 py-1.5 rounded-md bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-[11px] font-semibold text-white"
+                >
+                  {replying ? '回答中' : '让主播回答'}
+                </button>
+              </div>
             </div>
             <button
               type="button"

@@ -38,13 +38,15 @@ import {
   preferSessionRecords,
   saveClonedVoices,
   saveDigitalHumanProfiles,
+  saveStudioSession,
   saveUploadedAssets,
 } from './client/storage/studioLibrary';
+import type { StudioSessionSnapshot } from './client/storage/studioSession';
 
 export default function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>('editor');
   const [activePlatform, setActivePlatform] = useState<PlatformId>('douyin');
-  // Library records hydrate from IndexedDB. The project timeline stays in React state.
+  // Library records and the project timeline hydrate from IndexedDB.
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [digitalHumans, setDigitalHumans] = useState<DigitalHumanProfile[]>([]);
   const [assets, setAssets] = useState<MediaAsset[]>(() => [...BUILTIN_MEDIA_ASSETS]);
@@ -86,6 +88,19 @@ export default function App() {
         setDigitalHumans((current) => preferSessionRecords(current, stored.digitalHumans));
         setClonedVoices((current) => preferSessionRecords(current, stored.clonedVoices));
         setAssets((current) => mergeHydratedAssets(current, stored.assets));
+        if (stored.session) {
+          const session = stored.session;
+          setProjects((current) => ({ ...current, ...session.projects }));
+          setActivePlatform(session.activePlatform);
+          setBrief(session.brief);
+          setEditingStyle(session.editingStyle);
+          setTargetPlatforms(session.targetPlatforms);
+          setTargetDuration(session.targetDuration);
+          setBpm(session.bpm);
+          setAutoSoundOnEdit(session.autoSoundOnEdit);
+          setSelectedClipId(session.selectedClipId);
+          setSelectedSubtitleId(session.selectedSubtitleId);
+        }
         setStorageHydrated(true);
       })
       .catch(() => {
@@ -110,6 +125,38 @@ export default function App() {
     if (!storageHydrated) return;
     void saveUploadedAssets(assets);
   }, [assets, storageHydrated]);
+
+  useEffect(() => {
+    if (!storageHydrated) return;
+    const session: StudioSessionSnapshot = {
+      activePlatform,
+      projects,
+      brief,
+      editingStyle,
+      targetPlatforms,
+      targetDuration,
+      bpm,
+      autoSoundOnEdit,
+      selectedClipId,
+      selectedSubtitleId,
+    };
+    const handle = window.setTimeout(() => {
+      void saveStudioSession(session);
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [
+    activePlatform,
+    projects,
+    brief,
+    editingStyle,
+    targetPlatforms,
+    targetDuration,
+    bpm,
+    autoSoundOnEdit,
+    selectedClipId,
+    selectedSubtitleId,
+    storageHydrated,
+  ]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaCacheRef = useRef<Map<string, LoadedMediaElement>>(new Map());

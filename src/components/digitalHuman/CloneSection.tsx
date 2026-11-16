@@ -1,4 +1,4 @@
-import { type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { type Dispatch, type RefObject, type SetStateAction, useState } from 'react';
 import { ImagePlus, Loader2, Mic, Sparkles, Square, Upload, UserCheck } from 'lucide-react';
 import type {
   ClonedVoiceProfile,
@@ -191,7 +191,10 @@ export function CloneSection({
   setActiveAnchorId,
   setDrivenAudio,
 }: CloneSectionProps) {
+  const [cloneFailed, setCloneFailed] = useState(false);
+
   const handleUploadAnchorMaterial = async (file: File) => {
+    setCloneFailed(false);
     setCloneMessage(null);
     const created = await onUploadMediaAssetForAnchor(file);
     if (created) {
@@ -206,6 +209,7 @@ export function CloneSection({
 
   const handleCloneDigitalHuman = async () => {
     setCloningAnchor(true);
+    setCloneFailed(false);
     setCloneMessage(null);
 
     const boundClone = clonedVoices.find((v) => v.id === selectedVoiceBinding);
@@ -228,6 +232,7 @@ export function CloneSection({
       }
     }
 
+    let serverError = '';
     let aiPersonaSummary = `${styleHint || '短视频虚拟主播'}，形象自然清晰`;
     let aiTags = ['专属分身', '实拍混剪', '口播驱动'];
     let aiVoicePrompt =
@@ -253,7 +258,13 @@ export function CloneSection({
           generateGreeting: !recordedVoice && !boundClone,
         }),
       });
-      if (res.ok) {
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        serverError =
+          typeof data?.error === 'string' && data.error.trim()
+            ? data.error.trim()
+            : '数字人克隆失败，形象没有保存。';
+      } else {
         const data = await res.json();
         if (data?.personaSummary) aiPersonaSummary = data.personaSummary;
         if (Array.isArray(data?.anchorStyleTags) && data.anchorStyleTags.length > 0) {
@@ -272,7 +283,14 @@ export function CloneSection({
         }
       }
     } catch {
-      // Fallback cleanly to local profile creation using uploaded asset + recorded audio
+      serverError = '数字人克隆没有完成，请检查访问令牌后重试。';
+    }
+
+    if (serverError) {
+      setCloneFailed(true);
+      setCloneMessage(serverError);
+      setCloningAnchor(false);
+      return;
     }
 
     const persistentAvatarUrl =
@@ -322,7 +340,10 @@ export function CloneSection({
         text: scriptText.trim() || newProfile.name,
       });
     }
-    setCloneMessage(`虚拟主播「${newProfile.name}」克隆完成！已在下方激活，可直接驱动并嵌入时间线。`);
+    setCloneFailed(false);
+    setCloneMessage(
+      `虚拟主播「${newProfile.name}」已保存，合成音色匹配为 ${aiBaseVoice}。可以在下方直接驱动。`,
+    );
     setCloningAnchor(false);
   };
 
@@ -553,7 +574,7 @@ export function CloneSection({
           {cloningAnchor ? (
             <>
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>正在分析形象与声纹建模...</span>
+              <span>正在匹配形象和合成音色...</span>
             </>
           ) : (
             <>
@@ -564,7 +585,13 @@ export function CloneSection({
         </button>
 
         {cloneMessage && (
-          <div className="rounded-md border border-emerald-500/35 bg-emerald-950/25 px-2.5 py-2 text-[11px] text-emerald-200 leading-snug">
+          <div
+            className={`rounded-md border px-2.5 py-2 text-[11px] leading-snug ${
+              cloneFailed
+                ? 'border-rose-500/40 bg-rose-950/30 text-rose-200'
+                : 'border-emerald-500/35 bg-emerald-950/25 text-emerald-200'
+            }`}
+          >
             {cloneMessage}
           </div>
         )}

@@ -8,6 +8,11 @@ const PUBLIC_STABLE_TRANSCRIBE_MODELS = [
   'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
 ] as const;
+const PUBLIC_STABLE_VIDEO_MODELS = [
+  'veo-3.1-generate-preview',
+  'veo-3.0-generate-001',
+  'veo-2.0-generate-001',
+] as const;
 
 function buildModelCandidates(
   envValue: string | undefined,
@@ -32,6 +37,10 @@ export function getTtsModelCandidates(preferLite = false): string[] {
     return ['gemini-3.8-flash-lite-tts', ...base.filter((m) => m !== 'gemini-3.8-flash-lite-tts')];
   }
   return base;
+}
+
+export function getVideoModelCandidates(): string[] {
+  return buildModelCandidates(process.env.GEMINI_VIDEO_MODEL, PUBLIC_STABLE_VIDEO_MODELS);
 }
 
 export function getTranscribeModelCandidates(): string[] {
@@ -82,12 +91,17 @@ export async function generateTextContentWithFallback(
 
   for (let idx = 0; idx < modelsToTry.length; idx++) {
     const currentModel = modelsToTry[idx];
-    const adaptedConfig = adaptConfigForModel(currentModel, params.config);
+    const adaptedConfig = adaptConfigForModel(currentModel, params.config) ?? {};
+    const requestConfig = {
+      ...adaptedConfig,
+      abortSignal:
+        (adaptedConfig as { abortSignal?: AbortSignal }).abortSignal ?? AbortSignal.timeout(20_000),
+    };
     try {
       return await ai.models.generateContent({
         model: currentModel,
         contents: params.contents as never,
-        ...(adaptedConfig ? { config: adaptedConfig as never } : {}),
+        config: requestConfig as never,
       });
     } catch (err: unknown) {
       lastErr = err;
@@ -97,7 +111,10 @@ export async function generateTextContentWithFallback(
           return await ai.models.generateContent({
             model: currentModel,
             contents: params.contents as never,
-            ...(adaptedConfig ? { config: adaptedConfig as never } : {}),
+            config: {
+              ...requestConfig,
+              abortSignal: AbortSignal.timeout(20_000),
+            } as never,
           });
         } catch (retryErr: unknown) {
           lastErr = retryErr;
@@ -137,6 +154,12 @@ function fetchThroughProxy(proxy: string): typeof fetch {
       dispatcher,
     })) as typeof fetch;
   return proxyFetchImpl;
+}
+
+export function fetchWithEnvProxy(input: Parameters<typeof undiciFetch>[0], init?: UndiciRequestInit) {
+  const proxy = envProxy();
+  if (!proxy) return undiciFetch(input, init);
+  return fetchThroughProxy(proxy)(input as never, init as never);
 }
 
 export function getGeminiClient() {

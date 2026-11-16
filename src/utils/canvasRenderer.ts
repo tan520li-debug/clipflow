@@ -1193,14 +1193,21 @@ function drawDigitalHumanFacialMuscleRig(
             (0.75 + 0.25 * Math.abs(Math.sin(timeSec * (11 + lipSharp * 5))))
         );
     const mx = dx + dw * 0.5;
-    const my = dy + dh * 0.86;
+    const my = dy + dh * 0.64;
     const visemeMeta = phonemeState?.active ? getVisemeDisplayMeta(phonemeState.viseme) : null;
 
-    ctx.strokeStyle = visemeMeta ? visemeMeta.badgeColor : preset.badgeColor;
-    ctx.lineWidth = Math.max(1.5, unit * 0.014);
-    ctx.globalAlpha = 0.45 + jawOpen * 0.48;
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#3b151c';
     ctx.beginPath();
-    ctx.ellipse(mx, my, Math.max(3, mouthW * 0.5), mouthH * 0.5, 0, 0, Math.PI * 2);
+    if (pucker > 0.45) {
+      ctx.ellipse(mx, my, Math.max(3, mouthW * 0.28), Math.max(2.5, mouthH * 0.7), 0, 0, Math.PI * 2);
+    } else {
+      ctx.ellipse(mx, my, Math.max(4, mouthW * 0.46), Math.max(2, mouthH * 0.55), 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.strokeStyle = visemeMeta ? visemeMeta.badgeColor : preset.badgeColor;
+    ctx.lineWidth = Math.max(1, unit * 0.008);
     ctx.stroke();
 
     if (visemeMeta && dw >= 110) {
@@ -1211,6 +1218,7 @@ function drawDigitalHumanFacialMuscleRig(
       ctx.textBaseline = 'middle';
       ctx.fillText(visemeMeta.shortTag, mx + mouthW * 0.55 + 4, my);
     }
+    ctx.restore();
   }
 
   ctx.restore();
