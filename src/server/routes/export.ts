@@ -140,9 +140,9 @@ export function registerExportRoutes(app: express.Express) {
       const binPath = binaryPathFor(id);
       handedOff = true;
       res.status(202).json({ jobId: id, status: 'queued' });
-      startJob(id, async () => {
+      startJob(id, async (signal) => {
         try {
-          await transcodeVideoFileToH264Mp4(inPath, binPath);
+          await transcodeVideoFileToH264Mp4(inPath, binPath, signal);
           const outStat = await fs.stat(binPath);
           if (!outStat.isFile() || outStat.size === 0) {
             throw new Error('Transcoded MP4 file is empty');

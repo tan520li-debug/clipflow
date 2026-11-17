@@ -72,8 +72,14 @@ export function acceptJsonJob(
 
     res.status(202).json({ jobId, status: 'queued' });
     const captured = captureResponse();
-    startJob(jobId, async () => {
+    startJob(jobId, async (signal) => {
+      if (signal.aborted) {
+        throw new Error('JOB_DEADLINE');
+      }
       await handler(req, captured.res);
+      if (signal.aborted) {
+        throw new Error('JOB_DEADLINE');
+      }
       return captured.toResult();
     });
   };

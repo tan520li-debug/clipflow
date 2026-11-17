@@ -19,8 +19,10 @@ export interface JobHttpResult {
   filename?: string;
 }
 
+export type JobWork = (signal: AbortSignal) => Promise<JobHttpResult>;
+
 const DEFAULT_JOB_DEADLINE_MS = 15 * 60 * 1000;
-const JOB_DEADLINE = 'JOB_DEADLINE';
+export const JOB_DEADLINE = 'JOB_DEADLINE';
 
 const queue: Array<() => Promise<void>> = [];
 let busy = false;
@@ -32,17 +34,33 @@ function jobDeadlineMs(): number {
   return DEFAULT_JOB_DEADLINE_MS;
 }
 
-function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+function deadlineError(): Error {
+  return new Error(JOB_DEADLINE);
+}
+
+function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
+  const controller = new AbortController();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(JOB_DEADLINE)), ms);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
+    let settled = false;
+    const timer = setTimeout(() => controller.abort(), ms);
+
+    const finish = (next: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      next();
+    };
+
+    const onAbort = () => finish(() => reject(deadlineError()));
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+
+    work(controller.signal).then(
+      (value) => finish(() => resolve(value)),
       (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
+        finish(() => {
+          if (controller.signal.aborted) reject(deadlineError());
+          else reject(error);
+        });
       },
     );
   });
@@ -61,10 +79,10 @@ function pump(): void {
     });
 }
 
-async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<void> {
+async function execute(id: string, work: JobWork): Promise<void> {
   await markRunning(id);
   try {
-    const result = await withDeadline(work(), jobDeadlineMs());
+    const result = await withDeadline(work, jobDeadlineMs());
     if (result.resultKind === 'binary') {
       const target = binaryPathFor(id);
       if (result.binaryPath) {
@@ -102,7 +120,7 @@ async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<
   }
 }
 
-export function startJob(id: string, work: () => Promise<JobHttpResult>): void {
+export function startJob(id: string, work: JobWork): void {
   reservedIds.delete(id);
   queue.push(() => execute(id, work));
   pump();
@@ -134,13 +152,12 @@ export async function admitJob(kind: string): Promise<{ id: string } | { full: t
   }
 }
 
-export function enqueueWork(kind: string, work: () => Promise<JobHttpResult>): string {
-  const id = crypto.randomUUID();
-  void createJob(kind, id).then(
-    () => {
-      startJob(id, work);
-    },
-    () => undefined
-  );
-  return id;
+export async function enqueueWork(
+  kind: string,
+  work: JobWork,
+): Promise<{ id: string } | { full: true }> {
+  const admitted = await admitJob(kind);
+  if ('full' in admitted) return admitted;
+  startJob(admitted.id, work);
+  return admitted;
 }

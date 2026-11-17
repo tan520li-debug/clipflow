@@ -32,27 +32,45 @@ function stillImage(body: unknown): { imageBytes: string; mimeType: string } | n
   return { imageBytes, mimeType };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('JOB_DEADLINE'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error('JOB_DEADLINE'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 async function waitForVideo(
   ai: ReturnType<typeof getGeminiClient>,
   operation: GenerateVideosOperation,
+  signal?: AbortSignal,
 ): Promise<GenerateVideosOperation> {
   const deadline = Date.now() + VIDEO_WAIT_MS;
   let current = operation;
   while (!current.done) {
+    if (signal?.aborted) {
+      throw new Error('JOB_DEADLINE');
+    }
     if (Date.now() > deadline) {
       throw new Error('VIDEO_TIMEOUT');
     }
-    await sleep(8000);
+    await sleep(8000, signal);
     current = await ai.operations.getVideosOperation({ operation: current });
   }
   return current;
 }
 
-async function bytesFromVideo(video: Video | undefined): Promise<Buffer> {
+async function bytesFromVideo(video: Video | undefined, signal?: AbortSignal): Promise<Buffer> {
   if (!video) throw new Error('NO_VIDEO');
   if (video.videoBytes) {
     const bytes = Buffer.from(video.videoBytes, 'base64');
@@ -63,6 +81,7 @@ async function bytesFromVideo(video: Video | undefined): Promise<Buffer> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const response = await fetchWithEnvProxy(video.uri, {
     headers: apiKey ? { 'x-goog-api-key': apiKey } : undefined,
+    signal,
   });
   if (!response.ok) throw new Error(`VIDEO_DOWNLOAD_${response.status}`);
   const bytes = Buffer.from(await response.arrayBuffer());
@@ -100,7 +119,7 @@ function failure(err: unknown): JobHttpResult {
   };
 }
 
-async function generateTalkingVideo(body: unknown): Promise<JobHttpResult> {
+async function generateTalkingVideo(body: unknown, signal?: AbortSignal): Promise<JobHttpResult> {
   const script = scriptFrom(body);
   const image = stillImage(body);
   const prompt = `Vertical 9:16 short video of one adult presenter facing the camera and speaking this Mandarin line naturally, with visible mouth movement: ${script}. Studio lighting, no subtitles, no logos.`;
@@ -124,11 +143,11 @@ async function generateTalkingVideo(body: unknown): Promise<JobHttpResult> {
           generateAudio: true,
         },
       });
-      operation = await waitForVideo(ai, operation);
+      operation = await waitForVideo(ai, operation, signal);
       if (operation.error) {
         throw new Error(JSON.stringify(operation.error));
       }
-      const bytes = await bytesFromVideo(operation.response?.generatedVideos?.[0]?.video);
+      const bytes = await bytesFromVideo(operation.response?.generatedVideos?.[0]?.video, signal);
       return {
         httpStatus: 200,
         resultKind: 'binary',
@@ -137,6 +156,7 @@ async function generateTalkingVideo(body: unknown): Promise<JobHttpResult> {
         filename: 'clipflow-talking.mp4',
       };
     } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'JOB_DEADLINE') throw err;
       lastErr = err;
       if (isQuotaExceededError(err)) break;
       if (index < models.length - 1) {
@@ -169,6 +189,6 @@ export function registerTalkingVideoRoute(app: express.Express): void {
     const jobId = admitted.id;
     res.status(202).json({ jobId, status: 'queued' });
     const body = req.body;
-    startJob(jobId, () => generateTalkingVideo(body));
+    startJob(jobId, (signal) => generateTalkingVideo(body, signal));
   });
 }

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { admitJob, startJob } from './runner.ts';
+import { admitJob, enqueueWork, startJob } from './runner.ts';
 import { createJob, readJob } from './store.ts';
 
 let previousJobsDir: string | undefined;
@@ -86,5 +86,54 @@ describe('startJob', () => {
       jsonBody: { ok: true },
     }));
     await waitForStatus(id, 'succeeded');
+  });
+
+  it('aborts the work signal when the deadline is reached', async () => {
+    process.env.CLIPFLOW_JOB_DEADLINE_MS = '30';
+    let aborted = false;
+    const stuck = await createJob('stuck-abort');
+    startJob(
+      stuck.id,
+      (signal) =>
+        new Promise((_, reject) => {
+          signal.addEventListener('abort', () => {
+            aborted = true;
+            reject(new Error('JOB_DEADLINE'));
+          });
+        }),
+    );
+    await waitForStatus(stuck.id, 'failed');
+    expect(aborted).toBe(true);
+    expect(await readJob(stuck.id)).toMatchObject({
+      status: 'failed',
+      httpStatus: 504,
+      error: '任务超时，已停止等待。',
+    });
+  });
+
+  it('refuses enqueueWork when the queue is already full', async () => {
+    process.env.CLIPFLOW_JOB_QUEUE_MAX = '1';
+    process.env.CLIPFLOW_JOB_DEADLINE_MS = '40';
+    const hold = await admitJob('hold-enqueue');
+    if (!('id' in hold)) throw new Error('第一个任务应该能进入队列');
+    startJob(hold.id, () => new Promise(() => undefined));
+    const extra = await enqueueWork('extra-enqueue', async () => ({
+      httpStatus: 200,
+      resultKind: 'json',
+      jsonBody: { ok: true },
+    }));
+    expect(extra).toEqual({ full: true });
+    await waitForStatus(hold.id, 'failed');
+  });
+
+  it('runs work admitted through enqueueWork', async () => {
+    const queued = await enqueueWork('ok-enqueue', async () => ({
+      httpStatus: 200,
+      resultKind: 'json',
+      jsonBody: { ok: true },
+    }));
+    if (!('id' in queued)) throw new Error('enqueueWork 应该能进入队列');
+    await waitForStatus(queued.id, 'succeeded');
+    expect((await readJob(queued.id))?.jsonBody).toEqual({ ok: true });
   });
 });
