@@ -1,7 +1,7 @@
 import type { GenerateVideosOperation, Video } from '@google/genai';
 import express from 'express';
 import { awaitWithAbort, JOB_DEADLINE } from '../jobs/abort.ts';
-import { admitJob, QUEUE_FULL_MESSAGE, startJob, type JobHttpResult } from '../jobs/runner.ts';
+import { admitJob, QUEUE_FULL_MESSAGE, queuedJobBody, startJob, type JobHttpResult } from '../jobs/runner.ts';
 import {
   fetchWithEnvProxy,
   getGeminiClient,
@@ -202,7 +202,7 @@ export function registerTalkingVideoRoute(app: express.Express): void {
       return;
     }
     const jobId = admitted.id;
-    res.status(202).json({ jobId, status: 'queued' });
+    res.status(202).json(queuedJobBody(jobId));
     const body = req.body;
     startJob(jobId, (signal) => generateTalkingVideo(body, signal));
   });

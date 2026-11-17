@@ -1,5 +1,5 @@
 import type { Request, RequestHandler, Response } from 'express';
-import { admitJob, QUEUE_FULL_MESSAGE, startJob, type JobHttpResult } from './runner.ts';
+import { admitJob, QUEUE_FULL_MESSAGE, queuedJobBody, startJob, type JobHttpResult } from './runner.ts';
 
 interface CaptureState {
   statusCode: number;
@@ -70,7 +70,7 @@ export function acceptJsonJob(
     }
     const jobId = admitted.id;
 
-    res.status(202).json({ jobId, status: 'queued' });
+    res.status(202).json(queuedJobBody(jobId));
     const captured = captureResponse();
     startJob(jobId, async (signal) => {
       if (signal.aborted) {

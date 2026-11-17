@@ -182,4 +182,69 @@ describe('apiFetch', () => {
       body: { error: '任务仍在处理，请稍后再查看。' },
     });
   });
+
+  it('uses the deadline and queue cap from the accepted job', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    installBrowserDoubles(focus);
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        return new Response(
+          JSON.stringify({ jobId: 'job-4', status: 'queued', deadlineMs: 1000, queueMax: 2 }),
+          { status: 202 },
+        );
+      }
+      return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    let settled = false;
+    const pending = apiFetch('/api/polish-brief', { method: 'POST', body: '{}' }).then(async (response) => {
+      settled = true;
+      return { status: response.status, body: await response.json() };
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1800);
+    await expect(pending).resolves.toEqual({
+      status: 504,
+      body: { error: '任务仍在处理，请稍后再查看。' },
+    });
+  });
+
+  it('keeps polling when the server queue cap is larger than the default', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    installBrowserDoubles(focus);
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        return new Response(
+          JSON.stringify({
+            jobId: 'job-5',
+            status: 'queued',
+            deadlineMs: JOB_DEADLINE_MS,
+            queueMax: JOB_QUEUE_MAX + 1,
+          }),
+          { status: 202 },
+        );
+      }
+      return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    let settled = false;
+    const pending = apiFetch('/api/suggest-bgm', { method: 'POST', body: '{}' }).then(async (response) => {
+      settled = true;
+      return { status: response.status, body: await response.json() };
+    });
+    await vi.advanceTimersByTimeAsync(JOB_QUEUE_MAX * JOB_DEADLINE_MS + 800);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(JOB_DEADLINE_MS);
+    await expect(pending).resolves.toEqual({
+      status: 504,
+      body: { error: '任务仍在处理，请稍后再查看。' },
+    });
+  });
 });

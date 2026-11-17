@@ -138,6 +138,20 @@ export function jobQueueLimit(): number {
   return JOB_QUEUE_MAX;
 }
 
+export function queuedJobBody(jobId: string): {
+  jobId: string;
+  status: 'queued';
+  deadlineMs: number;
+  queueMax: number;
+} {
+  return {
+    jobId,
+    status: 'queued',
+    deadlineMs: jobDeadlineMs(),
+    queueMax: jobQueueLimit(),
+  };
+}
+
 export function jobQueueFull(): boolean {
   return queue.length + (busy ? 1 : 0) + reservedIds.size >= jobQueueLimit();
 }

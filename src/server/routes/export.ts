@@ -4,7 +4,7 @@ import { createWriteStream, type WriteStream } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { binaryPathFor } from '../jobs/store.ts';
-import { admitJob, QUEUE_FULL_MESSAGE, startJob } from '../jobs/runner.ts';
+import { admitJob, QUEUE_FULL_MESSAGE, queuedJobBody, startJob } from '../jobs/runner.ts';
 import { transcodeVideoFileToH264Mp4 } from '../media/transcode.ts';
 import { ensureStudioTmpDir } from '../media/workDir.ts';
 
@@ -139,7 +139,7 @@ export function registerExportRoutes(app: express.Express) {
       const id = admitted.id;
       const binPath = binaryPathFor(id);
       handedOff = true;
-      res.status(202).json({ jobId: id, status: 'queued' });
+      res.status(202).json(queuedJobBody(id));
       startJob(id, async (signal) => {
         try {
           await transcodeVideoFileToH264Mp4(inPath, binPath, signal);

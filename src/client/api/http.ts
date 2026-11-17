@@ -10,8 +10,15 @@ import { externalizeJsonBody } from './externalizeMedia';
 
 const JOB_POLL_INTERVAL_MS = 800;
 
-function pollTimeoutMs(): number {
-  return JOB_QUEUE_MAX * JOB_DEADLINE_MS + JOB_POLL_INTERVAL_MS;
+function pollTimeoutMs(deadlineMs: number, queueMax: number): number {
+  const window = queueMax * deadlineMs + JOB_POLL_INTERVAL_MS;
+  if (!Number.isFinite(window)) return JOB_QUEUE_MAX * JOB_DEADLINE_MS + JOB_POLL_INTERVAL_MS;
+  return window;
+}
+
+function atLeastOne(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return null;
+  return value;
 }
 
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
@@ -30,27 +37,36 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   const response = await fetch(input, { ...init, headers, body });
   if (response.status !== 202) return response;
 
-  const jobId = await readAcceptedJobId(response);
-  if (!jobId) return response;
+  const accepted = await readAcceptedJob(response);
+  if (!accepted) return response;
   await cancelUnusedBody(response);
   const origin = requestOrigin(response, input);
   return pollJob(
-    jobEndpoint(origin, jobId),
-    jobEndpoint(origin, jobId, '/result'),
+    jobEndpoint(origin, accepted.jobId),
+    jobEndpoint(origin, accepted.jobId, '/result'),
     authHeaders(headers),
-    pollTimeoutMs(),
+    pollTimeoutMs(accepted.deadlineMs, accepted.queueMax),
   );
 }
 
-async function readAcceptedJobId(response: Response): Promise<string | null> {
+interface AcceptedJob {
+  jobId: string;
+  deadlineMs: number;
+  queueMax: number;
+}
+
+async function readAcceptedJob(response: Response): Promise<AcceptedJob | null> {
   try {
     const text = await response.clone().text();
     if (!text.trim()) return null;
     const parsed: unknown = JSON.parse(text);
     if (!parsed || typeof parsed !== 'object' || !('jobId' in parsed)) return null;
-    const jobId = (parsed as { jobId?: unknown }).jobId;
-    if (typeof jobId !== 'string' || jobId.length === 0) return null;
-    return jobId;
+    const record = parsed as { jobId?: unknown; deadlineMs?: unknown; queueMax?: unknown };
+    if (typeof record.jobId !== 'string' || record.jobId.length === 0) return null;
+    const deadlineMs = atLeastOne(record.deadlineMs) ?? JOB_DEADLINE_MS;
+    const queueRaw = atLeastOne(record.queueMax);
+    const queueMax = queueRaw === null ? JOB_QUEUE_MAX : Math.floor(queueRaw);
+    return { jobId: record.jobId, deadlineMs, queueMax };
   } catch {
     return null;
   }
@@ -122,7 +138,7 @@ async function pollJob(
   statusUrl: string,
   resultUrl: string,
   headers: Headers,
-  timeoutMs = pollTimeoutMs(),
+  timeoutMs: number,
 ): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

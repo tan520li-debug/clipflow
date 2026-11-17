@@ -3,17 +3,20 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { JOB_DEADLINE_MS, JOB_QUEUE_MAX } from '../../contracts/http.ts';
 import { jobAbortSignal } from './abort.ts';
 import { acceptJsonJob } from './http.ts';
 import { readJob } from './store.ts';
 
 let previousJobsDir: string | undefined;
 let previousDeadline: string | undefined;
+let previousQueueMax: string | undefined;
 let dir = '';
 
 beforeEach(async () => {
   previousJobsDir = process.env.JOBS_DIR;
   previousDeadline = process.env.CLIPFLOW_JOB_DEADLINE_MS;
+  previousQueueMax = process.env.CLIPFLOW_JOB_QUEUE_MAX;
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'clipflow-http-jobs-'));
   process.env.JOBS_DIR = dir;
 });
@@ -23,6 +26,8 @@ afterEach(async () => {
   else process.env.JOBS_DIR = previousJobsDir;
   if (previousDeadline === undefined) delete process.env.CLIPFLOW_JOB_DEADLINE_MS;
   else process.env.CLIPFLOW_JOB_DEADLINE_MS = previousDeadline;
+  if (previousQueueMax === undefined) delete process.env.CLIPFLOW_JOB_QUEUE_MAX;
+  else process.env.CLIPFLOW_JOB_QUEUE_MAX = previousQueueMax;
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -100,7 +105,26 @@ describe('acceptJsonJob', () => {
 
     const state = await invoke(handler, { topic: '海边' });
     expect(state.statusCode).toBe(202);
-    expect(state.body).toMatchObject({ status: 'queued' });
+    expect(state.body).toMatchObject({
+      status: 'queued',
+      deadlineMs: JOB_DEADLINE_MS,
+      queueMax: JOB_QUEUE_MAX,
+    });
+    const jobId = (state.body as { jobId?: unknown }).jobId;
+    expect(typeof jobId).toBe('string');
+    await waitForTerminal(String(jobId));
+  });
+
+  it('reports the live deadline and queue cap on the accepted job', async () => {
+    process.env.CLIPFLOW_JOB_DEADLINE_MS = '1200';
+    process.env.CLIPFLOW_JOB_QUEUE_MAX = '3';
+    const handler = acceptJsonJob('demo', async (_req, res) => {
+      res.json({ ok: true });
+    });
+
+    const state = await invoke(handler, {});
+    expect(state.statusCode).toBe(202);
+    expect(state.body).toMatchObject({ status: 'queued', deadlineMs: 1200, queueMax: 3 });
     const jobId = (state.body as { jobId?: unknown }).jobId;
     expect(typeof jobId).toBe('string');
     await waitForTerminal(String(jobId));
