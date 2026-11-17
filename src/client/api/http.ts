@@ -1,6 +1,7 @@
 import {
   ADMIN_TOKEN_HEADER,
   JOB_DEADLINE_MS,
+  JOB_QUEUE_MAX,
   MISSING_ADMIN_TOKEN_MESSAGE,
   UI_LANG_HEADER,
 } from '../../contracts/http';
@@ -10,7 +11,7 @@ import { externalizeJsonBody } from './externalizeMedia';
 const JOB_POLL_INTERVAL_MS = 800;
 
 function pollTimeoutMs(): number {
-  return JOB_DEADLINE_MS + JOB_POLL_INTERVAL_MS;
+  return JOB_QUEUE_MAX * JOB_DEADLINE_MS + JOB_POLL_INTERVAL_MS;
 }
 
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {

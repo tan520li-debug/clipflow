@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { JOB_DEADLINE_MS } from '../../contracts/http.ts';
+import { JOB_DEADLINE_MS, JOB_QUEUE_MAX } from '../../contracts/http.ts';
 import { JOB_DEADLINE, runWithJobAbort } from './abort.ts';
 import {
   binaryPathFor,
@@ -130,14 +130,12 @@ export function startJob(id: string, work: JobWork): void {
   pump();
 }
 
-const DEFAULT_JOB_QUEUE_MAX = 8;
-
 export const QUEUE_FULL_MESSAGE = '正在处理的任务太多，请等当前任务结束后再试。';
 
 export function jobQueueLimit(): number {
   const raw = Number(process.env.CLIPFLOW_JOB_QUEUE_MAX);
   if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
-  return DEFAULT_JOB_QUEUE_MAX;
+  return JOB_QUEUE_MAX;
 }
 
 export function jobQueueFull(): boolean {

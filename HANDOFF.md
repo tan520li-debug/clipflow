@@ -1,5 +1,21 @@
 # ClipFlow 交接
 
+写于 2026-11-17 23:14（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `663fd73`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-17 23:13）
+
+页面等整条队列，不只等一段任务截止。队列默认 8 个，含正在跑的那一个，而且同一时间只跑一个。排在最后的任务，最坏要等前面 7 段做完，再加上自己的一段，共 8 段 15 分钟。23:10 那一笔只等一段，排队时会提前回「任务仍在处理，请稍后再查看。」现在页面等 `JOB_QUEUE_MAX * JOB_DEADLINE_MS`，再加一个 800 毫秒。两个默认数都在 `src/contracts/http.ts`，服务端队列上限和任务截止用同一对。
+
+`CLIPFLOW_JOB_DEADLINE_MS` 和 `CLIPFLOW_JOB_QUEUE_MAX` 仍只改服务端。把截止或队列调得比默认更大时，页面仍可能先停。调得更小则页面会多等，任务先结束就先返回。
+
+23:13 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 17 个文件、67 个测试通过。`http.test.ts` 用假时钟确认：排队超过一段 15 分钟仍继续等，整段 8×15 分钟还没结束才回 504。没有在页面上点主播回答或说话视频。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 23:11 写下的原文。
+
 写于 2026-11-17 23:11（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。23:03 已把当时的 `main` 从 `83622e6` 快进推到 `origin/main`，两端都是 `a233f0f`。这一班从 `a233f0f` 接着做，还没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-17 23:10）

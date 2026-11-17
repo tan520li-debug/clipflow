@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JOB_DEADLINE_MS, MISSING_ADMIN_TOKEN_MESSAGE } from '../../contracts/http';
+import { JOB_DEADLINE_MS, JOB_QUEUE_MAX, MISSING_ADMIN_TOKEN_MESSAGE } from '../../contracts/http';
 import { ADMIN_TOKEN_STORAGE_KEY } from '../../utils/i18n';
 import { apiFetch } from './http';
 
@@ -115,14 +115,57 @@ describe('apiFetch', () => {
     expect(polls).toBe(152);
   });
 
-  it('stops after the job deadline when the job never finishes', async () => {
+  it('keeps polling a queued job past one job deadline', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    installBrowserDoubles(focus);
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    let polls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        return new Response(JSON.stringify({ jobId: 'job-2', status: 'queued' }), { status: 202 });
+      }
+      polls += 1;
+      if (polls < 1127) {
+        return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          status: 'succeeded',
+          resultKind: 'json',
+          httpStatus: 200,
+          jsonBody: { ready: true },
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    let settled = false;
+    const pending = apiFetch('/api/export/transcode-mp4', { method: 'POST', body: '{}' }).then(
+      (response) => {
+        settled = true;
+        return response;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(JOB_DEADLINE_MS);
+    expect(settled).toBe(false);
+    expect(polls).toBe(1126);
+    await vi.advanceTimersByTimeAsync(800);
+    const response = await pending;
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ready: true });
+  });
+
+  it('stops after the whole queue window when the job never finishes', async () => {
     vi.useFakeTimers();
     const focus = vi.fn();
     installBrowserDoubles(focus);
     store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
     const fetchMock = vi.fn(async (url: string) => {
       if (!String(url).includes('/api/jobs/')) {
-        return new Response(JSON.stringify({ jobId: 'job-2', status: 'queued' }), { status: 202 });
+        return new Response(JSON.stringify({ jobId: 'job-3', status: 'queued' }), { status: 202 });
       }
       return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
     });
@@ -133,7 +176,7 @@ describe('apiFetch', () => {
       status: response.status,
       body: await response.json(),
     }));
-    await vi.advanceTimersByTimeAsync(JOB_DEADLINE_MS + 800);
+    await vi.advanceTimersByTimeAsync(JOB_QUEUE_MAX * JOB_DEADLINE_MS + 800);
     await expect(result).resolves.toEqual({
       status: 504,
       body: { error: '任务仍在处理，请稍后再查看。' },
