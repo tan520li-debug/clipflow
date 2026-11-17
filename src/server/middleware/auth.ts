@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type express from 'express';
-import { ADMIN_TOKEN_HEADER } from '../../contracts/http';
+import { ADMIN_TOKEN_HEADER, MISSING_ADMIN_TOKEN_MESSAGE } from '../../contracts/http';
 
 function timingSafeStringEqual(a: string, b: string): boolean {
   const hashA = crypto.createHash('sha256').update(a, 'utf8').digest();
@@ -26,7 +26,7 @@ export function apiAuthMiddleware(
 
   if (!providedToken) {
     return res.status(401).json({
-      error: '未提供访问令牌，请在请求头中携带 x-clipflow-token。',
+      error: MISSING_ADMIN_TOKEN_MESSAGE,
     });
   }
 

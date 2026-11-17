@@ -34,6 +34,20 @@ export function getStoredContentLanguage(): ContentLanguage {
   return getStoredUiLanguage();
 }
 
+export function readStoredAdminToken(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function focusAdminTokenField(): void {
+  if (typeof document === 'undefined') return;
+  document.querySelector<HTMLInputElement>('[aria-label="访问令牌"]')?.focus();
+}
+
 export function buildApiHeaders(extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
     [UI_LANG_HEADER]: getStoredUiLanguage(),
@@ -41,7 +55,7 @@ export function buildApiHeaders(extra?: Record<string, string>): Record<string, 
   };
   if (typeof window !== 'undefined') {
     try {
-      const token = window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim();
+      const token = readStoredAdminToken();
       if (token) {
         headers[ADMIN_TOKEN_HEADER] = token;
       }

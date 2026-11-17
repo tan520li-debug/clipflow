@@ -9,6 +9,8 @@ import type {
   TimelineClip,
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
+import { MISSING_ADMIN_TOKEN_MESSAGE } from '../../contracts/http';
+import { focusAdminTokenField, readStoredAdminToken } from '../../utils/i18n';
 
 type DrivenAudio = {
   audioBase64: string;
@@ -103,9 +105,17 @@ export function DriveSection({
   selectedClipStartTime,
   subtitles,
 }: DriveSectionProps) {
+  const stopForMissingToken = () => {
+    if (readStoredAdminToken()) return false;
+    setDriveError(MISSING_ADMIN_TOKEN_MESSAGE);
+    focusAdminTokenField();
+    return true;
+  };
+
   const handleSynthesizeAnchorSpeech = async (spoken?: string) => {
     const line = (spoken ?? scriptText).trim();
     if (!activeAnchor || !line) return;
+    if (stopForMissingToken()) return;
     if (spoken) setScriptText(spoken);
     setDrivingSpeech(true);
     setDriveError(null);
@@ -173,6 +183,7 @@ export function DriveSection({
   const handleAnchorReply = async () => {
     const line = dialogueLine.trim();
     if (!line || replying || drivingSpeech) return;
+    if (stopForMissingToken()) return;
     setReplying(true);
     setDriveError(null);
     try {

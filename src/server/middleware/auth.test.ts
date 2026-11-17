@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type express from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MISSING_ADMIN_TOKEN_MESSAGE } from '../../contracts/http';
 import { apiAuthMiddleware } from './auth';
 import { apiRateLimitMiddleware, flushRateLimitWrites, resetRateLimitForTests } from './rateLimit';
 
@@ -42,6 +43,7 @@ describe('apiAuthMiddleware', () => {
     );
     expect(continued).toBe(false);
     expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ error: MISSING_ADMIN_TOKEN_MESSAGE });
   });
 
   it('accepts the configured token', () => {
