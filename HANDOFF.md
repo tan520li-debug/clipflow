@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-17 23:43（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。23:39 把当时的 `HEAD` `db6c1c3` 推到 `origin/cursor/studio-followup`。`origin/main` 仍是 `a233f0f`，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-17 23:42）
+
+同一路径改了内容就新开一单。上一笔按路径记住任务，换台词再点会继续等第一单。豆包 23:35 把这写成非强制建议。现在记忆键是路径加上请求体的摘要。相同内容再操作才续等；内容变了就发新的 POST。还在排队或运行的旧单不会被取消。文案改为「任务仍在处理。再次用相同内容操作会继续等待这一次，不会另开一单。」
+
+23:42 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 17 个文件、73 个测试通过。假时钟：相同正文第二次不 POST；正文从「第一句」换成「第二句」会 POST。没有在页面上点主播回答或说话视频。这一笔还没有推送。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 23:38 写下的原文。
+
 写于 2026-11-17 23:38（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。23:38 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD` 和 `git rev-parse --short origin/main`。`HEAD` 是 `6bf516d`。功能代码终点仍是 `c4928a1`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。
 
 ## 豆包续审回执（2026-11-17 23:38）

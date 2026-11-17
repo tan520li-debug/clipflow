@@ -30,6 +30,20 @@ function atLeastOne(value: unknown): number | null {
   return value;
 }
 
+function bodyMark(body: BodyInit | null | undefined): string {
+  if (typeof body !== 'string') return '';
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < body.length; i += 1) {
+    hash ^= body.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function pendingSlot(path: string, body: BodyInit | null | undefined): string {
+  return `${path}\u0000${bodyMark(body)}`;
+}
+
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   for (const [key, value] of Object.entries(buildApiHeaders())) {
@@ -42,8 +56,8 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
     focusAdminTokenField();
     return jsonResult({ error: MISSING_ADMIN_TOKEN_MESSAGE }, 401);
   }
-  const path = requestPath(input);
-  const resumed = await resumePending(path, headers);
+  const slot = pendingSlot(requestPath(input), init.body);
+  const resumed = await resumePending(slot, headers);
   if (resumed) return resumed;
 
   const body = typeof init.body === 'string' ? await externalizeJsonBody(init.body, headers) : init.body;
@@ -54,11 +68,11 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   if (!accepted) return response;
   await cancelUnusedBody(response);
   const origin = requestOrigin(response, input);
-  return finishPoll(path, origin, accepted, headers);
+  return finishPoll(slot, origin, accepted, headers);
 }
 
 async function finishPoll(
-  path: string,
+  slot: string,
   origin: string,
   accepted: AcceptedJob,
   headers: Headers,
@@ -71,15 +85,15 @@ async function finishPoll(
     accepted.jobId,
   );
   if (await isStillRunning(response)) {
-    writePending(path, { ...accepted, origin });
+    writePending(slot, { ...accepted, origin });
   } else {
-    clearPending(path);
+    clearPending(slot);
   }
   return response;
 }
 
-async function resumePending(path: string, headers: Headers): Promise<Response | null> {
-  const pending = readPending(path);
+async function resumePending(slot: string, headers: Headers): Promise<Response | null> {
+  const pending = readPending(slot);
   if (!pending) return null;
   const snapshot = await fetchJobSnapshot(jobEndpoint(pending.origin, pending.jobId), authHeaders(headers));
   if (
@@ -88,10 +102,10 @@ async function resumePending(path: string, headers: Headers): Promise<Response |
     snapshot?.status !== 'succeeded' &&
     snapshot?.status !== 'failed'
   ) {
-    clearPending(path);
+    clearPending(slot);
     return null;
   }
-  return finishPoll(path, pending.origin, pending, headers);
+  return finishPoll(slot, pending.origin, pending, headers);
 }
 
 interface AcceptedJob {

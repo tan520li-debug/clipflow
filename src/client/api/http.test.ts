@@ -305,11 +305,53 @@ describe('apiFetch', () => {
     expect(session.size).toBe(1);
 
     release = true;
-    const second = await apiFetch('/api/polish-brief', { method: 'POST', body: '{"again":true}' });
+    const second = await apiFetch('/api/polish-brief', { method: 'POST', body: '{}' });
     expect(posts).toBe(1);
     expect(second.status).toBe(200);
     await expect(second.json()).resolves.toEqual({ ready: true });
     expect(session.get('clipflow_pending_jobs_v1')).toBe('{}');
+  });
+
+  it('starts a new job when the same path is called with different content', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    const session = new Map<string, string>();
+    installBrowserDoubles(focus);
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => session.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        session.set(key, value);
+      },
+      removeItem: (key: string) => {
+        session.delete(key);
+      },
+    });
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    let posts = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        posts += 1;
+        if (posts === 1) {
+          return new Response(
+            JSON.stringify({ jobId: 'job-8', status: 'queued', deadlineMs: 1000, queueMax: 1 }),
+            { status: 202 },
+          );
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/api/polish-brief', { method: 'POST', body: '{"script":"第一句"}' });
+    await vi.advanceTimersByTimeAsync(1800);
+    expect((await first).status).toBe(504);
+    expect(posts).toBe(1);
+
+    const second = await apiFetch('/api/polish-brief', { method: 'POST', body: '{"script":"第二句"}' });
+    expect(posts).toBe(2);
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toEqual({ ok: true });
   });
 
   it('starts a new job when the remembered one has already failed', async () => {
