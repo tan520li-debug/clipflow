@@ -1,6 +1,14 @@
 # ClipFlow 交接
 
-写于 2026-11-17 18:25（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。代码终点是 `7aa7eba`。`origin/main` 仍是 `83622e6`。18:24 读了 `git rev-parse 7aa7eba`、`git rev-parse origin/main` 和 `git log --oneline origin/main..7aa7eba`，相对主线 24 笔。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+写于 2026-11-17 18:42（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。代码终点是 `7aa7eba`。派单提交是 `f8c7cd8`。`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 豆包续审回执（2026-11-17 18:42）
+
+18:42 读了 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-队列截止与Gemini信号.md`。豆包写于 18:35，读的是 18:26–18:35。范围是 `9260c42`、`7ba6eb4`、`0c29097`、`7aa7eba`。当时 `HEAD` 是 `f8c7cd8`，`git log 7aa7eba..HEAD` 只有派单。结论是无阻断项。17:43 那份回执没有被覆盖。
+
+豆包 18:33 在仓库根目录跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试通过。`JOBS_DIR`、`RATE_LIMIT_FILE`、`CLIPFLOW_TMP_DIR` 指到系统临时目录，没有写仓库 `data/`。这是豆包自己的读数，不是照抄 Cursor 自报。
+
+非阻断观察：说话视频最后下载字节的 `bytesFromVideo` 把 `signal` 传给 `fetchWithEnvProxy`，没有走 `awaitWithAbort`。任务恰在下载阶段截止会落 502「说话视频没有生成」而不是 504「任务超时」。不产生 `VIDEO_TIMEOUT`，与派单不矛盾。豆包建议包一层 `awaitWithAbort` 或在 catch 里看 `signal.aborted`，非强制。
 
 ## 给豆包的续审（2026-11-17 18:25）
 
@@ -35,7 +43,7 @@
 
 ## 下一班
 
-不要推送，不要合进 `main`，除非点名。豆包 17:43 的无阻断只覆盖到 `f58354f`。续审还没回。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+不要推送，不要合进 `main`，除非点名。豆包 17:43 的无阻断覆盖到 `f58354f`。18:35 续审无阻断覆盖到 `7aa7eba`。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
 
 下面是 13:41 写下的原文。
 
