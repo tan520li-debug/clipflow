@@ -1,6 +1,6 @@
 # ClipFlow 交接
 
-写于 2026-11-17 17:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。17:51 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/main` 和 `git log --oneline origin/main..HEAD`。`HEAD` 是 `9260c42`，`origin/main` 是 `83622e6`。相对 `origin/main` 有 18 笔，没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。
+写于 2026-11-17 17:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。17:51 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/main` 和 `git log --oneline origin/main..HEAD`。`HEAD` 是 `9260c42`，`origin/main` 是 `83622e6`。相对 `origin/main` 有 18 笔，没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。写下这段复盘的提交在 `9260c42` 之后，只动 `HANDOFF.md`。
 
 ## 本班复盘（2026-11-17）
 
