@@ -4,7 +4,7 @@
 
 ## 给豆包的只读审计（2026-11-17 17:28）
 
-17:28 在仓库根目录读了 `git rev-parse HEAD`、`git rev-parse origin/main` 和 `git log origin/main..HEAD`。`HEAD` 是 `f58354f`，`origin/main` 是 `83622e6`。没有推送，没有合进 `main`。反重力审过的是当时 `HEAD` 还是 `d957e6f` 的那棵树。`db1996e` 到 `f58354f` 这 11 笔还没人审。派单在 `docs/派单-20261117-Cursor-给豆包-只读审计.md`，同样一份在 `D:\Doubao\clipflow-audit-20261117\`。豆包只读这个仓库，回执写到豆包自己的目录，不要改这里的文件、`.env`、`data/` 或那份过时补丁。
+17:28 在仓库根目录读了 `git rev-parse HEAD`、`git rev-parse origin/main` 和 `git log origin/main..HEAD`。`HEAD` 是 `f58354f`，`origin/main` 是 `83622e6`。没有推送，没有合进 `main`。反重力审过的是当时 `HEAD` 还是 `d957e6f` 的那棵树。`db1996e` 到 `f58354f` 这 11 笔还没人审。派单在 `docs/派单-20261117-Cursor-给豆包-只读审计.md`，同样一份在 `D:\Doubao\clipflow-audit-20261117\`。豆包只读这个仓库，回执写到豆包自己的目录，不要改这里的文件、`.env`、`data/` 或那份过时补丁。17:46 读了 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`。豆包写于 17:43，读的是 17:39–17:43。结论是无阻断项。`db1996e` 到 `f58354f` 的代码和派单里要核对的行为一致。豆包自己跑的 `tsc --noEmit`（含 `tsconfig.domain.json`）退出码 0，`vitest run` 13 个文件、48 个测试通过；测试目录指到系统临时目录，没有写仓库 `data/`。回执里的三条非阻断观察：60 秒是单次请求上限，两个音色模型都卡死时大约两分钟才回 504；队列上限是先查再写，并发时可能短暂超过 8；15 分钟截止只停止等待，不取消底层进程。真实 Gemini、真实 Veo、真实卡死超时、口型和音色，豆包没有跑。没有合进 `main`，也没有推送。
 
 ## 当前状态（2026-11-17 13:41）
 
