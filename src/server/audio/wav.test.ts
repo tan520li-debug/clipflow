@@ -54,4 +54,24 @@ describe('ensurePlayableWav', () => {
     expect(header.startsWith('RIFF')).toBe(true);
     expect(header.endsWith('WAVE')).toBe(true);
   });
+
+  it('does not label empty or non-PCM bytes as a WAV', () => {
+    const empty = ensurePlayableWav({ data: '', mimeType: 'audio/L16;codec=pcm;rate=24000' });
+    expect(empty.data).toBe('');
+    expect(empty.mimeType).not.toBe('audio/wav');
+
+    const oddByte = ensurePlayableWav({
+      data: Buffer.from([1]).toString('base64'),
+      mimeType: 'audio/L16;rate=24000',
+    });
+    expect(oddByte.mimeType).not.toBe('audio/wav');
+    expect(Buffer.from(oddByte.data, 'base64').subarray(0, 4).toString('ascii')).not.toBe('RIFF');
+
+    const foreign = ensurePlayableWav({
+      data: Buffer.from('not-pcm-audio', 'utf8').toString('base64'),
+      mimeType: 'audio/mpeg',
+    });
+    expect(foreign.mimeType).toBe('audio/mpeg');
+    expect(foreign.data).toBe(Buffer.from('not-pcm-audio', 'utf8').toString('base64'));
+  });
 });

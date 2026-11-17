@@ -236,14 +236,18 @@ export function ensurePlayableWav(segment: {
   data: string;
   mimeType?: string;
 }): { data: string; mimeType: string } {
+  const declared = segment.mimeType?.trim() || '';
+  const payload = segment.data.includes(',') ? (segment.data.split(',')[1] ?? '') : segment.data;
+  if (!payload.trim()) {
+    return { data: segment.data, mimeType: declared === 'audio/wav' ? '' : declared };
+  }
   const wrapped = concatenateWavBase64Segments([
-    { data: segment.data, mimeType: segment.mimeType?.trim() || 'audio/wav' },
+    { data: segment.data, mimeType: declared || 'audio/wav' },
   ]);
-  const playable = getWavDurationSec(wrapped.audioBase64) !== null;
-  return {
-    data: wrapped.audioBase64,
-    mimeType: playable ? 'audio/wav' : wrapped.mimeType || 'audio/wav',
-  };
+  if (getWavDurationSec(wrapped.audioBase64) !== null) {
+    return { data: wrapped.audioBase64, mimeType: 'audio/wav' };
+  }
+  return { data: segment.data, mimeType: declared };
 }
 
 export function concatenateWavBase64Segments(
