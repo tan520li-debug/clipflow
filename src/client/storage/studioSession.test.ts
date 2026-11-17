@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { compactStudioSession, normalizeStudioSession } from './studioSession';
+import {
+  compactStudioSession,
+  normalizeStudioSession,
+  restoreSpilledCueAudio,
+  spillOversizedCueAudio,
+} from './studioSession';
 
 describe('normalizeStudioSession', () => {
   it('keeps a saved timeline and drops an empty record', () => {
@@ -52,5 +57,42 @@ describe('normalizeStudioSession', () => {
     expect(compact.projects.tiktok?.voiceoverCues?.[0]?.text).toBe('口播');
     expect(compact.projects.tiktok?.voiceoverCues?.[0]?.audioBase64).toBe('');
     expect(compact.projects.tiktok?.audio.customAudioUrl).toBeUndefined();
+  });
+
+  it('moves oversized cue audio beside the session and restores it', () => {
+    const session = normalizeStudioSession({
+      projects: {
+        douyin: {
+          platform: 'douyin',
+          aspectRatio: '9:16',
+          clips: [],
+          subtitles: [],
+          copy: {},
+          audio: { bpm: 96, volume: 1, bgmPreset: 'none' },
+          voiceoverCues: [
+            { id: 'keep', text: '短', audioBase64: 'abc', mimeType: 'audio/wav' },
+            { id: 'big', text: '长', audioBase64: 'b'.repeat(180_001), mimeType: 'audio/wav' },
+          ],
+        },
+      },
+    });
+    const spilled = spillOversizedCueAudio(session!);
+    const stored = spilled.session.projects.douyin?.voiceoverCues ?? [];
+    expect(stored[0]?.audioBase64).toBe('abc');
+    expect(stored[1]?.audioBase64).toBe('clipflow-cue-audio:douyin:big');
+    expect(spilled.spilled).toEqual([
+      { key: 'clipflow-cue-audio:douyin:big', audioBase64: 'b'.repeat(180_001) },
+    ]);
+
+    const restored = restoreSpilledCueAudio(
+      spilled.session,
+      new Map([['clipflow-cue-audio:douyin:big', 'b'.repeat(180_001)]]),
+    );
+    expect(restored.projects.douyin?.voiceoverCues?.[1]?.audioBase64).toBe('b'.repeat(180_001));
+    expect(restored.projects.douyin?.voiceoverCues?.[1]?.text).toBe('长');
+
+    const missing = restoreSpilledCueAudio(spilled.session, new Map());
+    expect(missing.projects.douyin?.voiceoverCues?.[1]?.audioBase64).toBe('');
+    expect(missing.projects.douyin?.voiceoverCues?.[1]?.text).toBe('长');
   });
 });

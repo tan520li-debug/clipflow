@@ -92,6 +92,13 @@ export function normalizeStudioSession(raw: unknown): StudioSessionSnapshot | nu
 
 const AUDIO_KEEP_CHARS = 180_000;
 
+export const CUE_AUDIO_REF_PREFIX = 'clipflow-cue-audio:';
+
+export interface SpilledCueAudio {
+  key: string;
+  audioBase64: string;
+}
+
 function compactCue(cue: VoiceoverCue): VoiceoverCue {
   if (typeof cue.audioBase64 === 'string' && cue.audioBase64.length > AUDIO_KEEP_CHARS) {
     return { ...cue, audioBase64: '' };
@@ -116,4 +123,67 @@ export function compactStudioSession(session: StudioSessionSnapshot): StudioSess
     };
   }
   return { ...session, projects };
+}
+
+function cueAudioKey(platform: string, cueId: string): string {
+  return `${CUE_AUDIO_REF_PREFIX}${platform}:${cueId}`;
+}
+
+/** Move oversized cue audio out of the session document. The bytes are written beside it. */
+export function spillOversizedCueAudio(session: StudioSessionSnapshot): {
+  session: StudioSessionSnapshot;
+  spilled: SpilledCueAudio[];
+} {
+  const spilled: SpilledCueAudio[] = [];
+  const projects: Partial<Record<PlatformId, PlatformProjectState>> = {};
+  for (const [platform, project] of Object.entries(session.projects) as Array<
+    [PlatformId, PlatformProjectState | undefined]
+  >) {
+    if (!project) continue;
+    projects[platform] = {
+      ...project,
+      voiceoverCues: project.voiceoverCues?.map((cue) => {
+        if (typeof cue.audioBase64 !== 'string' || cue.audioBase64.length <= AUDIO_KEEP_CHARS) return cue;
+        if (cue.audioBase64.startsWith(CUE_AUDIO_REF_PREFIX)) return cue;
+        const key = cueAudioKey(platform, cue.id);
+        spilled.push({ key, audioBase64: cue.audioBase64 });
+        return { ...cue, audioBase64: key };
+      }),
+    };
+  }
+  return { session: { ...session, projects }, spilled };
+}
+
+/** Put spilled cue audio back. A missing side record keeps the cue text and drops the bytes. */
+export function restoreSpilledCueAudio(
+  session: StudioSessionSnapshot,
+  audioByKey: ReadonlyMap<string, string>,
+): StudioSessionSnapshot {
+  const projects: Partial<Record<PlatformId, PlatformProjectState>> = {};
+  for (const [platform, project] of Object.entries(session.projects) as Array<
+    [PlatformId, PlatformProjectState | undefined]
+  >) {
+    if (!project) continue;
+    projects[platform] = {
+      ...project,
+      voiceoverCues: project.voiceoverCues?.map((cue) => {
+        if (typeof cue.audioBase64 !== 'string' || !cue.audioBase64.startsWith(CUE_AUDIO_REF_PREFIX)) {
+          return cue;
+        }
+        const audioBase64 = audioByKey.get(cue.audioBase64);
+        return { ...cue, audioBase64: audioBase64 ?? '' };
+      }),
+    };
+  }
+  return { ...session, projects };
+}
+
+export function spilledCueAudioKeys(session: StudioSessionSnapshot): string[] {
+  const keys: string[] = [];
+  for (const project of Object.values(session.projects)) {
+    for (const cue of project?.voiceoverCues ?? []) {
+      if (cue.audioBase64.startsWith(CUE_AUDIO_REF_PREFIX)) keys.push(cue.audioBase64);
+    }
+  }
+  return keys;
 }

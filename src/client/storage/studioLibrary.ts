@@ -5,6 +5,9 @@ import { readRecord, writeRecord } from './recordsDb';
 import {
   compactStudioSession,
   normalizeStudioSession,
+  restoreSpilledCueAudio,
+  spillOversizedCueAudio,
+  spilledCueAudioKeys,
   STUDIO_SESSION_STORAGE_KEY,
   type StudioSessionSnapshot,
 } from './studioSession';
@@ -187,8 +190,24 @@ export async function loadStudioLibrary(): Promise<StudioLibrarySnapshot> {
     digitalHumans: normalizeStoredDigitalHumans(profilesRaw),
     clonedVoices: normalizeStoredClonedVoices(voicesRaw),
     assets: assembleLibraryAssets(uploadedRaw, profilesRaw),
-    session: normalizeStudioSession(sessionRaw),
+    session: await hydrateStudioSession(normalizeStudioSession(sessionRaw)),
   };
+}
+
+async function hydrateStudioSession(
+  session: StudioSessionSnapshot | null,
+): Promise<StudioSessionSnapshot | null> {
+  if (!session) return null;
+  const keys = spilledCueAudioKeys(session);
+  if (keys.length === 0) return session;
+  const audioByKey = new Map<string, string>();
+  await Promise.all(
+    keys.map(async (key) => {
+      const stored = await readRecord(key);
+      if (typeof stored === 'string' && stored.length > 0) audioByKey.set(key, stored);
+    }),
+  );
+  return restoreSpilledCueAudio(session, audioByKey);
 }
 
 function compactDigitalHumanProfiles(profiles: DigitalHumanProfile[]): DigitalHumanProfile[] {
@@ -240,10 +259,18 @@ export function saveStudioSession(session: StudioSessionSnapshot): Promise<void>
     try {
       await writeRecord(STUDIO_SESSION_STORAGE_KEY, session);
     } catch {
+      const spilled = spillOversizedCueAudio(session);
       try {
-        await writeRecord(STUDIO_SESSION_STORAGE_KEY, compactStudioSession(session));
+        for (const item of spilled.spilled) {
+          await writeRecord(item.key, item.audioBase64);
+        }
+        await writeRecord(STUDIO_SESSION_STORAGE_KEY, compactStudioSession(spilled.session));
       } catch {
-        // ignore storage quota errors
+        try {
+          await writeRecord(STUDIO_SESSION_STORAGE_KEY, compactStudioSession(session));
+        } catch {
+          // ignore storage quota errors
+        }
       }
     }
   });

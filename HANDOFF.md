@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-18 00:05（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 00:04）
+
+整段工程写不进 IndexedDB 时，超过约 18 万字符的配音不再直接清空。音频改写到旁边的记录，键是 `clipflow-cue-audio:` 加平台和台词编号，工程里只留这个键。打开时再装回音频。旁边的记录缺失或再写也失败，才丢掉音频，字幕和镜头还在。平时整段写得下，仍和原来一样放在工程里。
+
+00:04 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 17 个文件、75 个测试通过。没有在页面上刷新验配音还在。这一笔还没有推送。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 23:49 写下的原文。
+
 写于 2026-11-17 23:49（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。豆包不再接新的只读单，不在这里等回执。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-17 23:49）
