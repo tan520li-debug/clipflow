@@ -1,5 +1,35 @@
 # ClipFlow 交接
 
+写于 2026-11-17 17:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。17:51 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/main` 和 `git log --oneline origin/main..HEAD`。`HEAD` 是 `9260c42`，`origin/main` 是 `83622e6`。相对 `origin/main` 有 18 笔，没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。
+
+## 本班复盘（2026-11-17）
+
+这一班从 13:12 的 `d957e6f` 接到 `9260c42`。做完的是这些，不要再做一遍：
+
+- 任务有 15 分钟截止和最多 8 个的队列。17:49 起，名额在写任务记录之前先占上。同时来的两个准入，测试里只有一个能进。
+- 单段 Gemini 裸 PCM 收成 WAV。17:00 起，配音、试听、克隆问候、多语言和主播驱动都从 `synthesizeStyledSpeech` 出去，返回前走 `ensurePlayableWav`。空音频和认不出的字节不会被标成 `audio/wav`。
+- 顶栏没填访问令牌时，页面写「请先在顶栏填写访问令牌。」并聚焦那个输入框。`apiFetch` 在没有令牌时不发请求。
+- 语音合成每次请求最多 60 秒。超时后配音、试听、克隆建模、主播驱动、多语言回 504「语音合成超时，请缩短台词后再试。」
+
+豆包在 17:39–17:43 只读审了 `db1996e` 到 `f58354f`。回执在 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`，17:46 读过。无阻断项。豆包自己的 `tsc --noEmit`（两个 tsconfig）退出码 0，`vitest run` 13 个文件、48 个测试通过，测试目录在系统临时目录。`9260c42` 是审计之后补的队列名额，豆包没看过这一笔。
+
+17:51 请求 `http://127.0.0.1:3000/api/health` 返回 200。开发服务是 17:49 拉起来的，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。
+
+## 不要写成已经通过
+
+- `7835635` 之后没有在页面上再点主播回答、整片配音、试听、克隆问候、多语言。那些会打到 Gemini。
+- 60 秒是每一次请求的上限。两个音色模型都卡死时，大约两分钟才回 504。没有用真实卡住的请求验过。
+- 15 分钟截止只停止等待，不取消底层进程。`enqueueWork` 没有调用方，也没有队列上限。
+- 口型仍是画布色块。音色仍是 Kore / Zephyr / Puck / Charon / Fenrir 的预置匹配。没有点过真实 Veo。没有账号，没有收费。
+- `localhost` 和 `127.0.0.1` 不是同一个 `localStorage`。令牌键是 `clipflow_admin_token`。
+- 13:39 的完整 `npm run check` 在 `db1996e` 之前。其后没有再跑完整的 `npm run check`。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。豆包的无阻断只覆盖到 `f58354f`。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 13:41 写下的原文。
+
 写于 2026-11-17 13:41（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。13:12 读到的 `HEAD` 是 `d957e6f`，相对 `origin/main` 当时是下面三笔，没有推送，也没有合进 `main`。13:41 把当时未提交的那批按文件名提交进本分支，提交是 `db1996e`，仍不推送、不合进 `main`。16:24 再读 `git log origin/main..HEAD` 和 `git status --short`，`HEAD` 仍是 `db1996e`，工作区只剩未跟踪的 `cursor-studio-followup.patch`。不要把 `data/`、`.env` 或 `cursor-studio-followup.patch` 提交进去。推送和合进 `main` 等另一个 agent 审过。
 
 ## 给豆包的只读审计（2026-11-17 17:28）
