@@ -1,5 +1,24 @@
 # ClipFlow 交接
 
+写于 2026-11-17 23:38（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。23:38 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD` 和 `git rev-parse --short origin/main`。`HEAD` 是 `6bf516d`。功能代码终点仍是 `c4928a1`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。
+
+## 豆包续审回执（2026-11-17 23:38）
+
+23:38 读了 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-页面等任务.md`。豆包写于 23:35，读的是约 23:27–23:35。审 `663fd73`、`bca676f`、`45d1d5e`、`c4928a1`。当时 `HEAD` 是 `6bf516d`，`git log c4928a1..HEAD` 只有派单。结论是无阻断项。17:43、18:35、19:04 那三份回执的标题仍分别是只读审计、队列截止与 Gemini 信号、说话视频下载截止，没有被覆盖。
+
+豆包 23:33:22 在仓库根目录跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、72 个测试通过。`JOBS_DIR`、`RATE_LIMIT_FILE`、`CLIPFLOW_TMP_DIR` 指到系统临时目录，没有写仓库 `data/`。这是豆包自己的读数。Cursor 没有为记这笔再跑一遍。
+
+两条非阻断观察，都不改代码：
+
+- 同一路径、参数不同的两次请求，上一单还在排队或运行时会接着等那一单，新参数不会发出。豆包写明这是派单里的路径语义，不是缺陷。按请求体摘要再分键是非强制建议，这次不改。
+- 查任务快照失败时会忘掉旧单再开一单。豆包写明这是记不住就新开的降级，不比没有记忆时更差。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。功能审到 `c4928a1`。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 23:26 写下的原文。
+
 写于 2026-11-17 23:26（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点是 `c4928a1`。`origin/main` 仍是 `a233f0f`。`a233f0f..c4928a1` 共 4 笔，没有推送，没有合进 `main`。工作区在写下派单之前只有未跟踪的 `cursor-studio-followup.patch`。
 
 ## 给豆包的续审（2026-11-17 23:26）
