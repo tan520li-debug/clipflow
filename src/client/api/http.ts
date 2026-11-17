@@ -2,6 +2,7 @@ import {
   ADMIN_TOKEN_HEADER,
   JOB_DEADLINE_MS,
   JOB_QUEUE_MAX,
+  JOB_STILL_RUNNING_MESSAGE,
   MISSING_ADMIN_TOKEN_MESSAGE,
   UI_LANG_HEADER,
 } from '../../contracts/http';
@@ -9,6 +10,14 @@ import { buildApiHeaders, focusAdminTokenField } from '../../utils/i18n';
 import { externalizeJsonBody } from './externalizeMedia';
 
 const JOB_POLL_INTERVAL_MS = 800;
+const PENDING_JOBS_KEY = 'clipflow_pending_jobs_v1';
+
+interface PendingJob {
+  jobId: string;
+  origin: string;
+  deadlineMs: number;
+  queueMax: number;
+}
 
 function pollTimeoutMs(deadlineMs: number, queueMax: number): number {
   const window = queueMax * deadlineMs + JOB_POLL_INTERVAL_MS;
@@ -33,6 +42,10 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
     focusAdminTokenField();
     return jsonResult({ error: MISSING_ADMIN_TOKEN_MESSAGE }, 401);
   }
+  const path = requestPath(input);
+  const resumed = await resumePending(path, headers);
+  if (resumed) return resumed;
+
   const body = typeof init.body === 'string' ? await externalizeJsonBody(init.body, headers) : init.body;
   const response = await fetch(input, { ...init, headers, body });
   if (response.status !== 202) return response;
@@ -41,12 +54,44 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   if (!accepted) return response;
   await cancelUnusedBody(response);
   const origin = requestOrigin(response, input);
-  return pollJob(
+  return finishPoll(path, origin, accepted, headers);
+}
+
+async function finishPoll(
+  path: string,
+  origin: string,
+  accepted: AcceptedJob,
+  headers: Headers,
+): Promise<Response> {
+  const response = await pollJob(
     jobEndpoint(origin, accepted.jobId),
     jobEndpoint(origin, accepted.jobId, '/result'),
     authHeaders(headers),
     pollTimeoutMs(accepted.deadlineMs, accepted.queueMax),
+    accepted.jobId,
   );
+  if (await isStillRunning(response)) {
+    writePending(path, { ...accepted, origin });
+  } else {
+    clearPending(path);
+  }
+  return response;
+}
+
+async function resumePending(path: string, headers: Headers): Promise<Response | null> {
+  const pending = readPending(path);
+  if (!pending) return null;
+  const snapshot = await fetchJobSnapshot(jobEndpoint(pending.origin, pending.jobId), authHeaders(headers));
+  if (
+    snapshot?.status !== 'queued' &&
+    snapshot?.status !== 'running' &&
+    snapshot?.status !== 'succeeded' &&
+    snapshot?.status !== 'failed'
+  ) {
+    clearPending(path);
+    return null;
+  }
+  return finishPoll(path, pending.origin, pending, headers);
 }
 
 interface AcceptedJob {
@@ -139,6 +184,7 @@ async function pollJob(
   resultUrl: string,
   headers: Headers,
   timeoutMs: number,
+  jobId: string,
 ): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -160,7 +206,86 @@ async function pollJob(
     if (remaining <= 0) break;
     await delay(Math.min(JOB_POLL_INTERVAL_MS, remaining));
   }
-  return jsonResult({ error: '任务仍在处理，请稍后再查看。' }, 504);
+  return jsonResult({ error: JOB_STILL_RUNNING_MESSAGE, jobId }, 504);
+}
+
+function requestPath(input: string): string {
+  try {
+    const base = pageOrigin() || 'http://local';
+    return new URL(input, base).pathname;
+  } catch {
+    return input.split('?')[0] || input;
+  }
+}
+
+function pendingStore(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readPending(path: string): PendingJob | null {
+  const store = pendingStore();
+  if (!store) return null;
+  try {
+    const raw = store.getItem(PENDING_JOBS_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const record = (parsed as Record<string, unknown>)[path];
+    if (!record || typeof record !== 'object') return null;
+    const job = record as Partial<PendingJob>;
+    if (typeof job.jobId !== 'string' || job.jobId.length === 0) return null;
+    if (typeof job.origin !== 'string') return null;
+    const deadlineMs = atLeastOne(job.deadlineMs) ?? JOB_DEADLINE_MS;
+    const queueRaw = atLeastOne(job.queueMax);
+    const queueMax = queueRaw === null ? JOB_QUEUE_MAX : Math.floor(queueRaw);
+    return { jobId: job.jobId, origin: job.origin, deadlineMs, queueMax };
+  } catch {
+    return null;
+  }
+}
+
+function writePending(path: string, job: PendingJob): void {
+  const store = pendingStore();
+  if (!store) return;
+  try {
+    const raw = store.getItem(PENDING_JOBS_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    const map = parsed && typeof parsed === 'object' ? { ...(parsed as Record<string, unknown>) } : {};
+    map[path] = job;
+    store.setItem(PENDING_JOBS_KEY, JSON.stringify(map));
+  } catch {
+    // The next click cannot find this job and will start another one.
+  }
+}
+
+function clearPending(path: string): void {
+  const store = pendingStore();
+  if (!store) return;
+  try {
+    const raw = store.getItem(PENDING_JOBS_KEY);
+    if (!raw) return;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return;
+    const map = { ...(parsed as Record<string, unknown>) };
+    delete map[path];
+    store.setItem(PENDING_JOBS_KEY, JSON.stringify(map));
+  } catch {
+    // Leave the record. The next click will try once more, then drop it if the job is gone.
+  }
+}
+
+async function isStillRunning(response: Response): Promise<boolean> {
+  if (response.status !== 504) return false;
+  try {
+    const body = (await response.clone().json()) as { error?: unknown; jobId?: unknown };
+    return body.error === JOB_STILL_RUNNING_MESSAGE && typeof body.jobId === 'string';
+  } catch {
+    return false;
+  }
 }
 
 async function fetchJobSnapshot(url: string, headers: Headers): Promise<JobSnapshot | null> {

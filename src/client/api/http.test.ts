@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JOB_DEADLINE_MS, JOB_QUEUE_MAX, MISSING_ADMIN_TOKEN_MESSAGE } from '../../contracts/http';
+import {
+  JOB_DEADLINE_MS,
+  JOB_QUEUE_MAX,
+  JOB_STILL_RUNNING_MESSAGE,
+  MISSING_ADMIN_TOKEN_MESSAGE,
+} from '../../contracts/http';
 import { ADMIN_TOKEN_STORAGE_KEY } from '../../utils/i18n';
 import { apiFetch } from './http';
 
@@ -179,7 +184,7 @@ describe('apiFetch', () => {
     await vi.advanceTimersByTimeAsync(JOB_QUEUE_MAX * JOB_DEADLINE_MS + 800);
     await expect(result).resolves.toEqual({
       status: 504,
-      body: { error: '任务仍在处理，请稍后再查看。' },
+      body: { error: JOB_STILL_RUNNING_MESSAGE, jobId: 'job-3' },
     });
   });
 
@@ -209,7 +214,7 @@ describe('apiFetch', () => {
     await vi.advanceTimersByTimeAsync(1800);
     await expect(pending).resolves.toEqual({
       status: 504,
-      body: { error: '任务仍在处理，请稍后再查看。' },
+      body: { error: JOB_STILL_RUNNING_MESSAGE, jobId: 'job-4' },
     });
   });
 
@@ -244,7 +249,119 @@ describe('apiFetch', () => {
     await vi.advanceTimersByTimeAsync(JOB_DEADLINE_MS);
     await expect(pending).resolves.toEqual({
       status: 504,
-      body: { error: '任务仍在处理，请稍后再查看。' },
+      body: { error: JOB_STILL_RUNNING_MESSAGE, jobId: 'job-5' },
     });
+  });
+
+  it('continues the same job on the next click instead of starting another', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    const session = new Map<string, string>();
+    installBrowserDoubles(focus);
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => session.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        session.set(key, value);
+      },
+      removeItem: (key: string) => {
+        session.delete(key);
+      },
+    });
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    let posts = 0;
+    let release = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        posts += 1;
+        return new Response(
+          JSON.stringify({ jobId: 'job-6', status: 'queued', deadlineMs: 1000, queueMax: 1 }),
+          { status: 202 },
+        );
+      }
+      if (!release) return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          status: 'succeeded',
+          resultKind: 'json',
+          httpStatus: 200,
+          jsonBody: { ready: true },
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/api/polish-brief', { method: 'POST', body: '{}' });
+    const firstResult = first.then(async (response) => ({
+      status: response.status,
+      body: await response.json(),
+    }));
+    await vi.advanceTimersByTimeAsync(1800);
+    await expect(firstResult).resolves.toEqual({
+      status: 504,
+      body: { error: JOB_STILL_RUNNING_MESSAGE, jobId: 'job-6' },
+    });
+    expect(posts).toBe(1);
+    expect(session.size).toBe(1);
+
+    release = true;
+    const second = await apiFetch('/api/polish-brief', { method: 'POST', body: '{"again":true}' });
+    expect(posts).toBe(1);
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toEqual({ ready: true });
+    expect(session.get('clipflow_pending_jobs_v1')).toBe('{}');
+  });
+
+  it('starts a new job when the remembered one has already failed', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    const session = new Map<string, string>();
+    installBrowserDoubles(focus);
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => session.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        session.set(key, value);
+      },
+      removeItem: (key: string) => {
+        session.delete(key);
+      },
+    });
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    let failed = false;
+    let posts = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        posts += 1;
+        if (posts === 1) {
+          return new Response(
+            JSON.stringify({ jobId: 'job-7', status: 'queued', deadlineMs: 1000, queueMax: 1 }),
+            { status: 202 },
+          );
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (!failed) return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+      return new Response(
+        JSON.stringify({ status: 'failed', httpStatus: 500, error: '任务执行失败，请稍后重试。' }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/api/suggest-sfx', { method: 'POST', body: '{}' });
+    await vi.advanceTimersByTimeAsync(1800);
+    expect((await first).status).toBe(504);
+    expect(posts).toBe(1);
+
+    failed = true;
+    const second = await apiFetch('/api/suggest-sfx', { method: 'POST', body: '{}' });
+    expect(second.status).toBe(500);
+    await expect(second.json()).resolves.toEqual({ error: '任务执行失败，请稍后重试。' });
+    expect(posts).toBe(1);
+
+    const third = await apiFetch('/api/suggest-sfx', { method: 'POST', body: '{}' });
+    expect(posts).toBe(2);
+    expect(third.status).toBe(200);
+    await expect(third.json()).resolves.toEqual({ ok: true });
   });
 });

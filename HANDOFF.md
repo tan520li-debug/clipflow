@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-17 23:25（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `45d1d5e`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-17 23:24）
+
+页面等满窗口仍停在 504 时，记下这次任务。文案改为「任务仍在处理。再次操作会继续等待这一次，不会另开一单。」同一个接口路径再操作时，先看 `sessionStorage` 里的任务：还在排队或运行就继续等，不发新的请求；已经成功就返回那次结果；已经失败就把失败交给页面，再下一次才新开。任务记录不在了，或读出来没有 `queued` / `running` / `succeeded` / `failed`，就清掉记忆并按新请求走。记不住（没有 `sessionStorage` 或写入失败）时，下一次仍会新开一单。
+
+23:24 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 17 个文件、72 个测试通过。假时钟：第一次 1 秒窗口结束后再点，没有第二次 POST，等来的是第一次的成功结果；记住的任务已经失败时，这一下只返回失败，再下一次才 POST。没有在页面上点主播回答或说话视频。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 23:18 写下的原文。
+
 写于 2026-11-17 23:18（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `bca676f`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-17 23:17）
