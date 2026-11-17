@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  awaitWithAbort,
   delay,
   isJobAborted,
   JOB_DEADLINE,
@@ -35,6 +36,15 @@ describe('runWithJobAbort', () => {
       expect(jobAbortSignal()).toBe(job.signal);
       expect(isJobAborted()).toBe(false);
     });
+  });
+
+  it('stops waiting on a promise when the signal aborts', async () => {
+    const job = new AbortController();
+    const started = Date.now();
+    const pending = awaitWithAbort(new Promise(() => undefined), job.signal);
+    job.abort();
+    await expect(pending).rejects.toThrow(JOB_DEADLINE);
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 
   it('stops delay when the job signal aborts', async () => {

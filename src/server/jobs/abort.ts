@@ -33,21 +33,51 @@ export function mergeAbortSignal(timeoutMs: number, extra?: AbortSignal): AbortS
   return signals.length === 1 ? signals[0] : AbortSignal.any(signals);
 }
 
-export function delay(ms: number, extra?: AbortSignal): Promise<void> {
+export async function awaitWithAbort<T>(pending: Promise<T>, extra?: AbortSignal): Promise<T> {
   const signal = extra ?? storage.getStore();
+  if (!signal) return pending;
+  if (signal.aborted) throw jobDeadlineError();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(jobDeadlineError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(signal.aborted ? jobDeadlineError() : error);
+      },
+    );
+  });
+}
+
+function abortReason(signal: AbortSignal, job?: AbortSignal): Error {
+  if (job?.aborted) return jobDeadlineError();
+  return signal.reason instanceof Error ? signal.reason : jobDeadlineError();
+}
+
+export function delay(ms: number, extra?: AbortSignal): Promise<void> {
+  const job = storage.getStore();
+  const signal = extra ?? job;
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(jobDeadlineError());
+    if (!signal) {
+      setTimeout(resolve, ms);
+      return;
+    }
+    if (signal.aborted) {
+      reject(abortReason(signal, job));
       return;
     }
     const onAbort = () => {
       clearTimeout(timer);
-      reject(jobDeadlineError());
+      reject(abortReason(signal, job));
     };
     const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
+      signal.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }

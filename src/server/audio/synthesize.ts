@@ -21,6 +21,13 @@ export function isSpeechTimeoutError(err: unknown): boolean {
   return /operation was aborted/i.test(message) && /timeout/i.test(message);
 }
 
+function speechTimeoutError(err?: unknown): Error {
+  if (isSpeechTimeoutError(err) && err instanceof Error) return err;
+  const timeout = new Error('The operation was aborted due to timeout');
+  timeout.name = 'TimeoutError';
+  return timeout;
+}
+
 export async function synthesizeStyledSpeech(
   ai: GoogleGenAI,
   opts: {
@@ -33,6 +40,7 @@ export async function synthesizeStyledSpeech(
 ) {
   const { preferLite = false, voiceName, spokenText, stylePrompt } = opts;
   const timeoutMs = opts.timeoutMs ?? SPEECH_SYNTHESIS_TIMEOUT_MS;
+  const requestSignal = mergeAbortSignal(timeoutMs);
   const cleanStyle = (stylePrompt || '').trim();
 
   const rawCandidates = getTtsModelCandidates(preferLite);
@@ -88,7 +96,7 @@ export async function synthesizeStyledSpeech(
           contents: [{ role: 'user', parts: attempt.parts as never }],
           config: {
             responseModalities: ['AUDIO'],
-            abortSignal: mergeAbortSignal(timeoutMs),
+            abortSignal: requestSignal,
             ...(attempt.includeSpeechConfig
               ? {
                   speechConfig: {
@@ -111,6 +119,7 @@ export async function synthesizeStyledSpeech(
         }
       } catch (err: unknown) {
         if (isJobAborted()) throw jobDeadlineError();
+        if (isSpeechTimeoutError(err) || requestSignal.aborted) throw speechTimeoutError(err);
         lastErr = err;
         const msg = err instanceof Error ? err.message : String(err);
         if (isQuotaExceededError(err)) {
@@ -121,15 +130,16 @@ export async function synthesizeStyledSpeech(
           break;
         }
         if (isServiceBusyError(err)) {
-          await delay(700);
+          await delay(700, requestSignal);
           if (isJobAborted()) throw jobDeadlineError();
+          if (requestSignal.aborted) throw speechTimeoutError();
           try {
             const retryResp = await ai.models.generateContent({
               model: currentModel,
               contents: [{ role: 'user', parts: attempt.parts as never }],
               config: {
                 responseModalities: ['AUDIO'],
-                abortSignal: mergeAbortSignal(timeoutMs),
+                abortSignal: requestSignal,
                 ...(attempt.includeSpeechConfig
                   ? {
                       speechConfig: {
@@ -155,6 +165,9 @@ export async function synthesizeStyledSpeech(
             }
           } catch (retryErr: unknown) {
             if (isJobAborted()) throw jobDeadlineError();
+            if (isSpeechTimeoutError(retryErr) || requestSignal.aborted) {
+              throw speechTimeoutError(retryErr);
+            }
             lastErr = retryErr;
           }
           break;

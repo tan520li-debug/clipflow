@@ -106,6 +106,37 @@ describe('synthesizeStyledSpeech', () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
+  it('does not give each TTS model a fresh timeout budget', async () => {
+    let calls = 0;
+    const hanging = {
+      models: {
+        generateContent: (req: { config?: { abortSignal?: AbortSignal } }) => {
+          calls += 1;
+          return new Promise((_resolve, reject) => {
+            const signal = req.config?.abortSignal;
+            if (!signal) {
+              reject(new Error('missing abort'));
+              return;
+            }
+            const fail = () => reject(signal.reason ?? new Error('aborted'));
+            if (signal.aborted) fail();
+            else signal.addEventListener('abort', fail, { once: true });
+          });
+        },
+      },
+    } as unknown as GoogleGenAI;
+    const started = Date.now();
+    await expect(
+      synthesizeStyledSpeech(hanging, {
+        voiceName: 'Kore',
+        spokenText: '几克豆子',
+        timeoutMs: 80,
+      }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(calls).toBe(1);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
   it('stops a hung speech request when the job deadline aborts', async () => {
     let calls = 0;
     const hanging = {

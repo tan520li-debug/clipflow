@@ -1,5 +1,6 @@
 import type { GenerateVideosOperation, Video } from '@google/genai';
 import express from 'express';
+import { awaitWithAbort, JOB_DEADLINE } from '../jobs/abort.ts';
 import { admitJob, QUEUE_FULL_MESSAGE, startJob, type JobHttpResult } from '../jobs/runner.ts';
 import {
   fetchWithEnvProxy,
@@ -35,12 +36,12 @@ function stillImage(body: unknown): { imageBytes: string; mimeType: string } | n
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(new Error('JOB_DEADLINE'));
+      reject(new Error(JOB_DEADLINE));
       return;
     }
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new Error('JOB_DEADLINE'));
+      reject(new Error(JOB_DEADLINE));
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
@@ -59,13 +60,19 @@ async function waitForVideo(
   let current = operation;
   while (!current.done) {
     if (signal?.aborted) {
-      throw new Error('JOB_DEADLINE');
+      throw new Error(JOB_DEADLINE);
     }
     if (Date.now() > deadline) {
       throw new Error('VIDEO_TIMEOUT');
     }
     await sleep(8000, signal);
-    current = await ai.operations.getVideosOperation({ operation: current });
+    current = await awaitWithAbort(
+      ai.operations.getVideosOperation({
+        operation: current,
+        config: signal ? { abortSignal: signal } : {},
+      }),
+      signal,
+    );
   }
   return current;
 }
@@ -130,20 +137,23 @@ async function generateTalkingVideo(body: unknown, signal?: AbortSignal): Promis
   for (let index = 0; index < models.length; index++) {
     const model = models[index];
     try {
-      let operation = await ai.models.generateVideos({
-        model,
-        prompt,
-        ...(image ? { image } : {}),
-        config: {
-          numberOfVideos: 1,
-          aspectRatio: '9:16',
-          durationSeconds: 4,
-          resolution: '720p',
-          personGeneration: 'allow_adult',
-          generateAudio: true,
-          ...(signal ? { abortSignal: signal } : {}),
-        },
-      });
+      let operation = await awaitWithAbort(
+        ai.models.generateVideos({
+          model,
+          prompt,
+          ...(image ? { image } : {}),
+          config: {
+            numberOfVideos: 1,
+            aspectRatio: '9:16',
+            durationSeconds: 4,
+            resolution: '720p',
+            personGeneration: 'allow_adult',
+            generateAudio: true,
+            ...(signal ? { abortSignal: signal } : {}),
+          },
+        }),
+        signal,
+      );
       operation = await waitForVideo(ai, operation, signal);
       if (operation.error) {
         throw new Error(JSON.stringify(operation.error));
@@ -157,7 +167,7 @@ async function generateTalkingVideo(body: unknown, signal?: AbortSignal): Promis
         filename: 'clipflow-talking.mp4',
       };
     } catch (err: unknown) {
-      if (err instanceof Error && err.message === 'JOB_DEADLINE') throw err;
+      if (err instanceof Error && err.message === JOB_DEADLINE) throw err;
       lastErr = err;
       if (isQuotaExceededError(err)) break;
       if (index < models.length - 1) {
