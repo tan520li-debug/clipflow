@@ -1,5 +1,5 @@
-import { ADMIN_TOKEN_HEADER, UI_LANG_HEADER } from '../../contracts/http';
-import { buildApiHeaders } from '../../utils/i18n';
+import { ADMIN_TOKEN_HEADER, MISSING_ADMIN_TOKEN_MESSAGE, UI_LANG_HEADER } from '../../contracts/http';
+import { buildApiHeaders, focusAdminTokenField } from '../../utils/i18n';
 import { externalizeJsonBody } from './externalizeMedia';
 
 const JOB_POLL_INTERVAL_MS = 800;
@@ -19,6 +19,10 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   }
   if (!headers.has(UI_LANG_HEADER)) {
     headers.set(UI_LANG_HEADER, 'zh-CN');
+  }
+  if (!headers.get(ADMIN_TOKEN_HEADER)?.trim()) {
+    focusAdminTokenField();
+    return jsonResult({ error: MISSING_ADMIN_TOKEN_MESSAGE }, 401);
   }
   const body = typeof init.body === 'string' ? await externalizeJsonBody(init.body, headers) : init.body;
   const response = await fetch(input, { ...init, headers, body });
