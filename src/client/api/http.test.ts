@@ -354,6 +354,55 @@ describe('apiFetch', () => {
     await expect(second.json()).resolves.toEqual({ ok: true });
   });
 
+  it('does not reuse a job when the body is a blob', async () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    const session = new Map<string, string>();
+    installBrowserDoubles(focus);
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => session.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        session.set(key, value);
+      },
+      removeItem: (key: string) => {
+        session.delete(key);
+      },
+    });
+    store.set(ADMIN_TOKEN_STORAGE_KEY, 'stored-token');
+    let posts = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (!String(url).includes('/api/jobs/')) {
+        posts += 1;
+        if (posts === 1) {
+          return new Response(
+            JSON.stringify({ jobId: 'job-9', status: 'queued', deadlineMs: 1000, queueMax: 1 }),
+            { status: 202 },
+          );
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: 'queued' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/api/export/transcode-mp4', {
+      method: 'POST',
+      body: new Blob(['first-video']),
+    });
+    await vi.advanceTimersByTimeAsync(1800);
+    expect((await first).status).toBe(504);
+    expect(posts).toBe(1);
+    expect(session.get('clipflow_pending_jobs_v1') ?? '{}').toBe('{}');
+
+    const second = await apiFetch('/api/export/transcode-mp4', {
+      method: 'POST',
+      body: new Blob(['second-video']),
+    });
+    expect(posts).toBe(2);
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toEqual({ ok: true });
+  });
+
   it('starts a new job when the remembered one has already failed', async () => {
     vi.useFakeTimers();
     const focus = vi.fn();

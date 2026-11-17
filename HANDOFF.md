@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-17 23:49（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。豆包不再接新的只读单，不在这里等回执。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-17 23:49）
+
+成片转码的请求体是 `Blob`，不是字符串。上一笔把非字符串收成空摘要，两次导出都会续等同一单。现在每个二进制请求单独编号，不写入 `sessionStorage`，下一次导出总是新的 POST。字符串正文仍按路径加摘要续等。
+
+23:49 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 17 个文件、74 个测试通过。假时钟：第一段视频等满后，第二段视频会再 POST。没有在页面上点主播回答、导出或说话视频。这一笔还没有推送。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 23:44 写下的原文。
+
 写于 2026-11-17 23:44（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点是 `6215797`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。`6215797` 没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 给豆包的续审（2026-11-17 23:44）

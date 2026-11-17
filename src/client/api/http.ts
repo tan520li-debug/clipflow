@@ -31,13 +31,20 @@ function atLeastOne(value: unknown): number | null {
 }
 
 function bodyMark(body: BodyInit | null | undefined): string {
-  if (typeof body !== 'string') return '';
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < body.length; i += 1) {
-    hash ^= body.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+  if (typeof body === 'string') {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < body.length; i += 1) {
+      hash ^= body.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16);
   }
-  return (hash >>> 0).toString(16);
+  if (body == null) return '';
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  return `bin:${id}`;
 }
 
 function pendingSlot(path: string, body: BodyInit | null | undefined): string {
@@ -84,7 +91,7 @@ async function finishPoll(
     pollTimeoutMs(accepted.deadlineMs, accepted.queueMax),
     accepted.jobId,
   );
-  if (await isStillRunning(response)) {
+  if (await isStillRunning(response) && !slot.includes('\u0000bin:')) {
     writePending(slot, { ...accepted, origin });
   } else {
     clearPending(slot);
