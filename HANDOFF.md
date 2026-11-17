@@ -1,6 +1,6 @@
 # ClipFlow 交接
 
-写于 2026-11-17 13:41（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。13:12 读到的 `HEAD` 是 `d957e6f`，相对 `origin/main` 当时是下面三笔，没有推送，也没有合进 `main`。13:41 把当时未提交的那批按文件名提交进本分支，仍不推送、不合进 `main`。不要把 `data/`、`.env` 或 `cursor-studio-followup.patch` 提交进去。推送和合进 `main` 等另一个 agent 审过。
+写于 2026-11-17 13:41（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。13:12 读到的 `HEAD` 是 `d957e6f`，相对 `origin/main` 当时是下面三笔，没有推送，也没有合进 `main`。13:41 把当时未提交的那批按文件名提交进本分支，提交是 `db1996e`，仍不推送、不合进 `main`。16:24 再读 `git log origin/main..HEAD` 和 `git status --short`，`HEAD` 仍是 `db1996e`，工作区只剩未跟踪的 `cursor-studio-followup.patch`。不要把 `data/`、`.env` 或 `cursor-studio-followup.patch` 提交进去。推送和合进 `main` 等另一个 agent 审过。
 
 ## 当前状态（2026-11-17 13:41）
 
@@ -12,7 +12,7 @@
 | `ba50083` | Gemini 走本机代理，转码产出真正的 MP4 |
 | `d957e6f` | 时间线刷新后还在；主播能回话；访问令牌可在页面填写；克隆失败不再显示完成 |
 
-13:41 的这一笔收进当时还没提交的改动。提交前，2026-11-17 13:09 在仓库根目录跑过 `npx vitest run src/server/jobs/runner.test.ts src/server/jobs/http.test.ts src/server/middleware/auth.test.ts`，3 个文件、10 个测试通过；同一条命令里的 `npx tsc --noEmit` 退出码 0。2026-11-17 13:39 在同一目录跑了完整的 `npm run check`，退出码 0：Biome 检查 15 个文件，Vitest 10 个文件、35 个测试通过。`npm run check` 里的 Biome 只覆盖 `biome.json` 列出的路径，没有扫 `src/server/jobs`、`src/server/media`、`src/server/routes`。
+`db1996e` 收进当时还没提交的改动。提交前，2026-11-17 13:09 在仓库根目录跑过 `npx vitest run src/server/jobs/runner.test.ts src/server/jobs/http.test.ts src/server/middleware/auth.test.ts`，3 个文件、10 个测试通过；同一条命令里的 `npx tsc --noEmit` 退出码 0。2026-11-17 13:39 在同一目录跑了完整的 `npm run check`，退出码 0：Biome 检查 15 个文件，Vitest 10 个文件、35 个测试通过。`npm run check` 里的 Biome 只覆盖 `biome.json` 列出的路径，没有扫 `src/server/jobs`、`src/server/media`、`src/server/routes`。
 
 这一笔里的文件：`.env.example`、`README.md`、`HANDOFF.md`、`src/server/app.ts`、`src/server/jobs/http.ts`、`src/server/jobs/runner.ts`、`src/server/jobs/runner.test.ts`、`src/server/jobs/store.ts`、`src/server/media/transcode.ts`、`src/server/media/workDir.ts`、`src/server/media/workDir.test.ts`、`src/server/middleware/auth.test.ts`、`src/server/middleware/rateLimit.ts`、`src/server/middleware/rateLimitStore.ts`、`src/server/routes/export.ts`、`src/server/routes/talkingVideo.ts`。`cursor-studio-followup.patch` 是给反重力审计用的旧补丁，相对当前工作区已经过时，留在工作区，没有提交。
 
@@ -23,7 +23,7 @@
 - 单个任务默认最多等 15 分钟（`CLIPFLOW_JOB_DEADLINE_MS`，默认 900000）。超时标失败，HTTP 504，文案「任务超时，已停止等待。」已经是 `succeeded` 或 `failed` 的任务，迟到的完成不会再改状态。
 - 队列默认最多 8 个（含正在跑的那一个，`CLIPFLOW_JOB_QUEUE_MAX`）。满了返回 503，文案「正在处理的任务太多，请等当前任务结束后再试。」入口是 `admitJob`：`acceptJsonJob`、成片转码、说话视频都走它。`enqueueWork` 没有调用方，也没有套这个上限。主播回答和说话视频进了每分钟 3 次的严格限流。
 
-开发服务：2026-11-17 13:10 重新执行 `npm run dev`，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。页面地址是 `http://127.0.0.1:3000`。这之前停掉的旧进程退出码 1，是被结束的，不是启动失败。同一时间只留这一个进程听 3000。
+开发服务：2026-11-17 13:10 重新执行 `npm run dev`，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。页面地址是 `http://127.0.0.1:3000`。这之前停掉的旧进程退出码 1，是被结束的，不是启动失败。16:25 再请求 `http://127.0.0.1:3000/api/health` 连不上。16:25 又执行了一次 `npm run dev`，日志仍是 `ClipFlow Studio server running on http://0.0.0.0:3000`。
 
 ## 反重力审计之后怎么处理的
 
@@ -37,14 +37,14 @@
 - 克隆失败时页面用红色文案，不会再写「克隆完成」。音色仍是 Kore / Zephyr / Puck / Charon / Fenrir 里的预置匹配，不是本机声纹模型。
 - 时间线、简报、风格、平台写在 IndexedDB `clipflow` / `records`，键 `clipflow_studio_session_v1`。2026-11-17 上午在页面上改过简报「刷新保留验证：早八冰拿铁要还在」，刷新后还在。
 - 口型是画布上的嘴形色块（`drawDigitalHumanFacialMuscleRig`），不是神经口型模型。本机 `D:\w2l-work` 只有 ffmpeg，没有 MuseTalk / CosyVoice。
-- 「让主播回答」走 `POST /api/digital-human/reply`，空话当场 400。上午点过「几克豆子？」：第一次两个文本模型都是 503，页面显示「对话服务正忙，请稍后重试。」第二次请求挂住，后来给文本调用加了 20 秒 `AbortSignal.timeout`。配音和转写没有在那次点击里产出音频。
+- 「让主播回答」走 `POST /api/digital-human/reply`，空话当场 400。上午点过「几克豆子？」：第一次两个文本模型都是 503，页面显示「对话服务正忙，请稍后重试。」第二次请求挂住，后来给文本调用加了 20 秒 `AbortSignal.timeout`。那两次没有产出配音。2026-11-17 16:26 用同一句再打了一次：先回 202，任务 `39526882-67bd-4b1c-af8e-09761f3dc6ab` 约 16 秒后 `succeeded`，HTTP 200，文字是「这个问题问得好，不过豆子的大小和重量都不一样，建议你直接用厨房秤称一下，这样才最精准哦。」这条接口只回文字，没有配音。
 - 说话视频按钮已接上 `POST /api/digital-human/talking-video`（Veo，会花钱）。空台词验证过，返回 400「请先写一句要让主播说的话。」没有发过真实生成。
 
 ## 下一班
 
 13:41 那一笔已经在本地 `cursor/studio-followup`。不要重复提交。推送和合进 `main` 等另一个 agent 审过。工作区里剩下的 `cursor-studio-followup.patch` 仍然不要加进去。
 
-不要开做，除非点名：账号、收费、口型模型、实时对讲。口型仍是画布色块，本机没有 MuseTalk / CosyVoice。服务端工程库同样先不动。不要为了验证去点真正的 Veo 生成。Gemini 不忙时可以再试一次「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+不要开做，除非点名：账号、收费、口型模型、实时对讲。口型仍是画布色块，本机没有 MuseTalk / CosyVoice。服务端工程库同样先不动。不要为了验证去点真正的 Veo 生成。「让主播回答」16:26 已经再试过，文字通了，不必为了验证再打一次。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
 
 下面是 2026-11-17 凌晨的记录。其中「下一班先做」的五项，以及后来的代理、MP4、时间线、回话，都已经进了上面三笔提交。临时目录、单槽卡住、队列无上限这几条，以本节为准，不要按旧文再做一遍。
 
