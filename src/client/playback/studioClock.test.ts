@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { advanceStudioCursor } from './studioClock';
+import {
+  advanceStudioCursor,
+  clipVideoSeekSec,
+  digitalHumanSeekSec,
+  shouldSeekMedia,
+  shouldWhooshOnClipChange,
+} from './studioClock';
 
 describe('advanceStudioCursor', () => {
   it('caps a single frame dt at 0.1 seconds', () => {
@@ -52,5 +58,65 @@ describe('advanceStudioCursor', () => {
     expect(step.cursorSec).toBe(10);
     expect(step.reachedEnd).toBe(true);
     expect(step.lastPerfMs).toBe(100);
+  });
+});
+
+describe('shared media seek', () => {
+  it('clamps a clip seek into the source file', () => {
+    expect(clipVideoSeekSec(1.5, 2, 8)).toBeCloseTo(3.5, 5);
+    expect(clipVideoSeekSec(0, -1, 8)).toBe(0);
+    expect(clipVideoSeekSec(6, 5, 8)).toBe(8);
+    expect(clipVideoSeekSec(1, 1, Number.NaN)).toBe(2);
+  });
+
+  it('loops a digital-human seek inside its own duration', () => {
+    expect(digitalHumanSeekSec(7, 5)).toBeCloseTo(2, 5);
+    expect(digitalHumanSeekSec(-1, 5)).toBeCloseTo(4, 5);
+    expect(digitalHumanSeekSec(3, Number.NaN)).toBe(3);
+  });
+
+  it('reseeks while paused and only after drift while playing', () => {
+    expect(shouldSeekMedia(1, 1.1, true)).toBe(true);
+    expect(shouldSeekMedia(1, 1.1, false)).toBe(false);
+    expect(shouldSeekMedia(1, 1.3, false)).toBe(true);
+  });
+
+  it('whooshes on a non-cut change unless a sound effect is already there', () => {
+    expect(
+      shouldWhooshOnClipChange({
+        previousClipId: 'a',
+        clipId: 'b',
+        transition: 'fade',
+        cursorSec: 4,
+        sfxTimes: [],
+      }),
+    ).toBe(true);
+    expect(
+      shouldWhooshOnClipChange({
+        previousClipId: 'a',
+        clipId: 'b',
+        transition: 'cut',
+        cursorSec: 4,
+        sfxTimes: [],
+      }),
+    ).toBe(false);
+    expect(
+      shouldWhooshOnClipChange({
+        previousClipId: 'a',
+        clipId: 'b',
+        transition: 'fade',
+        cursorSec: 4,
+        sfxTimes: [4.2],
+      }),
+    ).toBe(false);
+    expect(
+      shouldWhooshOnClipChange({
+        previousClipId: null,
+        clipId: 'b',
+        transition: 'fade',
+        cursorSec: 4,
+        sfxTimes: [],
+      }),
+    ).toBe(false);
   });
 });

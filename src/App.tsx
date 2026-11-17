@@ -31,7 +31,7 @@ import {
   type LoadedMediaElement,
 } from './utils/canvasRenderer';
 import { primeVoiceEnvelopeCache } from './utils/digitalHumanAssets';
-import { advanceStudioCursor } from './client/playback/studioClock';
+import { advanceStudioCursor, clipVideoSeekSec, digitalHumanSeekSec, shouldSeekMedia, shouldWhooshOnClipChange } from './client/playback/studioClock';
 import {
   loadStudioLibrary,
   mergeHydratedAssets,
@@ -277,9 +277,13 @@ export default function App() {
       if (activeInfo) {
         const el = mediaCacheRef.current.get(activeInfo.clip.assetId);
         if (el instanceof HTMLVideoElement) {
-          const targetVidTime = activeInfo.clip.trimStart + activeInfo.localTime;
-          if (!isPlaying || Math.abs(el.currentTime - targetVidTime) > 0.25) {
-            el.currentTime = Math.min(Math.max(0, el.duration || 10), targetVidTime);
+          const targetVidTime = clipVideoSeekSec(
+            activeInfo.clip.trimStart,
+            activeInfo.localTime,
+            el.duration,
+          );
+          if (shouldSeekMedia(el.currentTime, targetVidTime, !isPlaying)) {
+            el.currentTime = targetVidTime;
           }
           if (isPlaying && el.paused) {
             void el.play().catch(() => undefined);
@@ -290,9 +294,9 @@ export default function App() {
         if (activeInfo.clip.digitalHuman?.avatarAssetId) {
           const dhEl = mediaCacheRef.current.get(activeInfo.clip.digitalHuman.avatarAssetId);
           if (dhEl instanceof HTMLVideoElement) {
-            const targetDhTime = activeInfo.localTime % Math.max(1, dhEl.duration || 5);
-            if (!isPlaying || Math.abs(dhEl.currentTime - targetDhTime) > 0.25) {
-              dhEl.currentTime = Math.min(Math.max(0, dhEl.duration || 10), targetDhTime);
+            const targetDhTime = digitalHumanSeekSec(activeInfo.localTime, dhEl.duration);
+            if (shouldSeekMedia(dhEl.currentTime, targetDhTime, !isPlaying)) {
+              dhEl.currentTime = targetDhTime;
             }
             if (isPlaying && dhEl.paused) {
               void dhEl.play().catch(() => undefined);
@@ -369,16 +373,15 @@ export default function App() {
       const activeInfo = findClipAtTime(currentProject.clips, localCursor);
       if (activeInfo) {
         if (
-          lastClipIdRef.current &&
-          lastClipIdRef.current !== activeInfo.clip.id &&
-          activeInfo.clip.transition !== 'cut'
+          shouldWhooshOnClipChange({
+            previousClipId: lastClipIdRef.current,
+            clipId: activeInfo.clip.id,
+            transition: activeInfo.clip.transition,
+            cursorSec: localCursor,
+            sfxTimes: (currentProject.sfxEvents ?? []).map((ev) => ev.time),
+          })
         ) {
-          const hasNearbyCustomSfx = (currentProject.sfxEvents ?? []).some(
-            (ev) => Math.abs(ev.time - localCursor) < 0.35
-          );
-          if (!hasNearbyCustomSfx) {
-            audioEngineRef.current?.triggerTransitionWhoosh();
-          }
+          audioEngineRef.current?.triggerTransitionWhoosh();
         }
         lastClipIdRef.current = activeInfo.clip.id;
       }

@@ -20,7 +20,7 @@ import { exportSrtSubtitles, formatTimecode, getTotalDuration, PLATFORM_META } f
 import { StudioAudioEngine } from '../utils/audioEngine';
 import { findClipAtTime, renderTimelineFrame, type LoadedMediaElement } from '../utils/canvasRenderer';
 import { apiFetch } from '../client/api/http';
-import { advanceStudioCursor } from '../client/playback/studioClock';
+import { advanceStudioCursor, clipVideoSeekSec, digitalHumanSeekSec, shouldSeekMedia, shouldWhooshOnClipChange } from '../client/playback/studioClock';
 
 interface ExportModalProps {
   project: PlatformProjectState;
@@ -294,10 +294,14 @@ export function ExportModal({
       if (activeInfo) {
         const el = mediaCache.get(activeInfo.clip.assetId);
         if (el instanceof HTMLVideoElement) {
-          const targetVidTime = activeInfo.clip.trimStart + activeInfo.localTime;
-          if (Math.abs(el.currentTime - targetVidTime) > 0.2) {
+          const targetVidTime = clipVideoSeekSec(
+            activeInfo.clip.trimStart,
+            activeInfo.localTime,
+            el.duration,
+          );
+          if (shouldSeekMedia(el.currentTime, targetVidTime, true)) {
             try {
-              el.currentTime = Math.min(el.duration || 10, targetVidTime);
+              el.currentTime = targetVidTime;
             } catch {
               // ignore seek errors
             }
@@ -306,8 +310,8 @@ export function ExportModal({
         if (activeInfo.clip.digitalHuman?.avatarAssetId) {
           const dhVid = mediaCache.get(activeInfo.clip.digitalHuman.avatarAssetId);
           if (dhVid instanceof HTMLVideoElement) {
-            const targetDhTime = activeInfo.localTime % Math.max(1, dhVid.duration || 5);
-            if (Math.abs(dhVid.currentTime - targetDhTime) > 0.2) {
+            const targetDhTime = digitalHumanSeekSec(activeInfo.localTime, dhVid.duration);
+            if (shouldSeekMedia(dhVid.currentTime, targetDhTime, true)) {
               try {
                 dhVid.currentTime = targetDhTime;
               } catch {
@@ -573,29 +577,36 @@ export function ExportModal({
         if (activeInfo) {
           const el = mediaCache.get(activeInfo.clip.assetId);
           if (el instanceof HTMLVideoElement) {
-            const targetVidTime = activeInfo.clip.trimStart + activeInfo.localTime;
-            if (Math.abs(el.currentTime - targetVidTime) > 0.25) {
-              el.currentTime = Math.min(el.duration || 10, targetVidTime);
+            const targetVidTime = clipVideoSeekSec(
+              activeInfo.clip.trimStart,
+              activeInfo.localTime,
+              el.duration,
+            );
+            if (shouldSeekMedia(el.currentTime, targetVidTime, false)) {
+              el.currentTime = targetVidTime;
             }
             if (el.paused) void el.play().catch(() => undefined);
           }
           if (activeInfo.clip.digitalHuman?.avatarAssetId) {
             const dhVid = mediaCache.get(activeInfo.clip.digitalHuman.avatarAssetId);
             if (dhVid instanceof HTMLVideoElement) {
-              const targetDhTime = activeInfo.localTime % Math.max(1, dhVid.duration || 5);
-              if (Math.abs(dhVid.currentTime - targetDhTime) > 0.25) {
+              const targetDhTime = digitalHumanSeekSec(activeInfo.localTime, dhVid.duration);
+              if (shouldSeekMedia(dhVid.currentTime, targetDhTime, false)) {
                 dhVid.currentTime = targetDhTime;
               }
               if (dhVid.paused) void dhVid.play().catch(() => undefined);
             }
           }
-          if (lastClipId && lastClipId !== activeInfo.clip.id && activeInfo.clip.transition !== 'cut') {
-            const hasNearbyCustomSfx = (project.sfxEvents ?? []).some(
-              (ev) => Math.abs(ev.time - clamped) < 0.35
-            );
-            if (!hasNearbyCustomSfx) {
-              audioEngine.triggerTransitionWhoosh();
-            }
+          if (
+            shouldWhooshOnClipChange({
+              previousClipId: lastClipId,
+              clipId: activeInfo.clip.id,
+              transition: activeInfo.clip.transition,
+              cursorSec: clamped,
+              sfxTimes: (project.sfxEvents ?? []).map((ev) => ev.time),
+            })
+          ) {
+            audioEngine.triggerTransitionWhoosh();
           }
           lastClipId = activeInfo.clip.id;
         }

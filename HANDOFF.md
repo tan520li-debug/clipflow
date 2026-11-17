@@ -1,6 +1,14 @@
 # ClipFlow 交接
 
-写于 2026-11-18 00:18（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+写于 2026-11-18 00:22（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 00:22）
+
+预览和导出原先各算视频入点和转场音效。现在都走 `studioClock`：画面入点夹在素材时长里，数字人按自己的时长循环，暂停时对准，播放时偏移超过 0.25 秒才重新定位。非硬切换镜头才补咻声，附近已有音效就不补。导出弹窗里的静帧也用同一套入点。
+
+00:21 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 18 个文件、81 个测试通过。00:22 重新打开 `http://127.0.0.1:3000/`，点「播放」变成「暂停」，再点回到「播放」，播放头 0.4 秒。没有点导出，没有点主播回答、配音或说话视频。
+
+下面是 00:18 写下的原文。
 
 ## 本机每天用的顺序
 
