@@ -1,6 +1,12 @@
 # ClipFlow 交接
 
-写于 2026-11-17 18:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点是 `5a6ab92`。`origin/main` 仍是 `83622e6`。18:51 读了 `git rev-parse 5a6ab92`、`git log --oneline origin/main..5a6ab92`，相对主线 27 笔。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+写于 2026-11-17 19:11（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点是 `5a6ab92`。派单提交是 `b978d1f`。`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 豆包续审回执（2026-11-17 19:11）
+
+19:11 读了 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-说话视频下载截止.md`。豆包写于 19:04，读的是约 19:02–19:03。只审 `5a6ab92`。当时 `HEAD` 是 `b978d1f`，`git log 5a6ab92..HEAD` 只有派单和交接。结论是无阻断项。17:43 和 18:35 那两份回执没有被覆盖。
+
+豆包 19:03:29 跑了 `node node_modules/vitest/vitest.mjs run src/server/routes/talkingVideo.test.ts`，1 个通过。完整 `npm run check` 豆包没复算，按未验。未点 Gemini / Veo，未用真实下载截止验 504。
 
 ## 给豆包的续审（2026-11-17 18:51）
 
@@ -12,7 +18,7 @@
 
 豆包 18:33 在仓库根目录跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试通过。`JOBS_DIR`、`RATE_LIMIT_FILE`、`CLIPFLOW_TMP_DIR` 指到系统临时目录，没有写仓库 `data/`。这是豆包自己的读数，不是照抄 Cursor 自报。18:44 Cursor 在改完下载中止之后又跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试通过。
 
-非阻断观察：说话视频最后下载字节的 `bytesFromVideo` 把 `signal` 传给 `fetchWithEnvProxy`，没有走 `awaitWithAbort`。任务恰在下载阶段截止会落 502「说话视频没有生成」而不是 504「任务超时」。不产生 `VIDEO_TIMEOUT`，与派单不矛盾。豆包建议包一层 `awaitWithAbort` 或在 catch 里看 `signal.aborted`，非强制。18:42 之后按这条建议改：下载和读字节走 `awaitWithAbort`，catch 里 `signal.aborted` 也重抛 `JOB_DEADLINE`。豆包没看过这一笔。
+非阻断观察：说话视频最后下载字节的 `bytesFromVideo` 把 `signal` 传给 `fetchWithEnvProxy`，没有走 `awaitWithAbort`。任务恰在下载阶段截止会落 502「说话视频没有生成」而不是 504「任务超时」。不产生 `VIDEO_TIMEOUT`，与派单不矛盾。豆包建议包一层 `awaitWithAbort` 或在 catch 里看 `signal.aborted`，非强制。18:42 之后按这条建议改：下载和读字节走 `awaitWithAbort`，catch 里 `signal.aborted` 也重抛 `JOB_DEADLINE`。19:04 豆包只读审了 `5a6ab92`，无阻断项。
 
 ## 给豆包的续审（2026-11-17 18:25）
 
@@ -47,7 +53,7 @@
 
 ## 下一班
 
-不要推送，不要合进 `main`，除非点名。豆包 17:43 的无阻断覆盖到 `f58354f`。18:35 续审无阻断覆盖到 `7aa7eba`。`5a6ab92` 的下载截止还在等回执。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+不要推送，不要合进 `main`，除非点名。豆包 17:43 的无阻断覆盖到 `f58354f`。18:35 续审无阻断覆盖到 `7aa7eba`。19:04 续审无阻断覆盖到 `5a6ab92`。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
 
 下面是 13:41 写下的原文。
 
