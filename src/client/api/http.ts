@@ -1,15 +1,16 @@
-import { ADMIN_TOKEN_HEADER, MISSING_ADMIN_TOKEN_MESSAGE, UI_LANG_HEADER } from '../../contracts/http';
+import {
+  ADMIN_TOKEN_HEADER,
+  JOB_DEADLINE_MS,
+  MISSING_ADMIN_TOKEN_MESSAGE,
+  UI_LANG_HEADER,
+} from '../../contracts/http';
 import { buildApiHeaders, focusAdminTokenField } from '../../utils/i18n';
 import { externalizeJsonBody } from './externalizeMedia';
 
 const JOB_POLL_INTERVAL_MS = 800;
-const JOB_POLL_TIMEOUT_MS = 120_000;
-const VIDEO_JOB_POLL_TIMEOUT_MS = 360_000;
 
-function pollTimeoutMs(input: string): number {
-  return input.includes('/api/digital-human/talking-video')
-    ? VIDEO_JOB_POLL_TIMEOUT_MS
-    : JOB_POLL_TIMEOUT_MS;
+function pollTimeoutMs(): number {
+  return JOB_DEADLINE_MS + JOB_POLL_INTERVAL_MS;
 }
 
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
@@ -36,7 +37,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
     jobEndpoint(origin, jobId),
     jobEndpoint(origin, jobId, '/result'),
     authHeaders(headers),
-    pollTimeoutMs(input),
+    pollTimeoutMs(),
   );
 }
 
@@ -120,7 +121,7 @@ async function pollJob(
   statusUrl: string,
   resultUrl: string,
   headers: Headers,
-  timeoutMs = JOB_POLL_TIMEOUT_MS,
+  timeoutMs = pollTimeoutMs(),
 ): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

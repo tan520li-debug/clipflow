@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { JOB_DEADLINE_MS } from '../../contracts/http.ts';
 import { JOB_DEADLINE, runWithJobAbort } from './abort.ts';
 import {
   binaryPathFor,
@@ -24,8 +25,6 @@ export interface JobHttpResult {
 
 export type JobWork = (signal: AbortSignal) => Promise<JobHttpResult>;
 
-const DEFAULT_JOB_DEADLINE_MS = 15 * 60 * 1000;
-
 const queue: Array<() => Promise<void>> = [];
 let busy = false;
 const reservedIds = new Set<string>();
@@ -33,7 +32,7 @@ const reservedIds = new Set<string>();
 function jobDeadlineMs(): number {
   const raw = Number(process.env.CLIPFLOW_JOB_DEADLINE_MS);
   if (Number.isFinite(raw) && raw >= 1) return raw;
-  return DEFAULT_JOB_DEADLINE_MS;
+  return JOB_DEADLINE_MS;
 }
 
 function deadlineError(): Error {
