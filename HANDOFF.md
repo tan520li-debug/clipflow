@@ -1,28 +1,28 @@
 # ClipFlow 交接
 
-写于 2026-11-17 17:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。17:51 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/main` 和 `git log --oneline origin/main..HEAD`。`HEAD` 是 `9260c42`，`origin/main` 是 `83622e6`。相对 `origin/main` 有 18 笔，没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。写下这段复盘的提交在 `9260c42` 之后，只动 `HANDOFF.md`。
+写于 2026-11-17 17:54（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。17:54 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/main`、`git log --oneline origin/main..HEAD` 和 `git log --oneline origin/main..9260c42`。17:51 读到的代码终点是 `9260c42`，当时 `origin/main` 是 `83622e6`，相对主线 18 笔。后面的 `c173cd6` 和 `b6b3e66` 只补了这段交接。17:54 的 `HEAD` 是 `b6b3e66`，`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。
 
 ## 本班复盘（2026-11-17）
 
-这一班从 13:12 的 `d957e6f` 接到 `9260c42`。做完的是这些，不要再做一遍：
+这一班做完的是四件事：
 
-- 任务有 15 分钟截止和最多 8 个的队列。17:49 起，名额在写任务记录之前先占上。同时来的两个准入，测试里只有一个能进。
-- 单段 Gemini 裸 PCM 收成 WAV。17:00 起，配音、试听、克隆问候、多语言和主播驱动都从 `synthesizeStyledSpeech` 出去，返回前走 `ensurePlayableWav`。空音频和认不出的字节不会被标成 `audio/wav`。
-- 顶栏没填访问令牌时，页面写「请先在顶栏填写访问令牌。」并聚焦那个输入框。`apiFetch` 在没有令牌时不发请求。
-- 语音合成每次请求最多 60 秒。超时后配音、试听、克隆建模、主播驱动、多语言回 504「语音合成超时，请缩短台词后再试。」
+- 任务有 15 分钟截止，队列最多 8 个。17:49 起，名额在写记录之前先占上。
+- 预置音色的合成从 `synthesizeStyledSpeech` 出去，返回前收成 WAV。空音频和认不出的字节不会被标成 `audio/wav`。
+- 顶栏没填访问令牌时，页面提示去填，并且不发请求。
+- 语音合成每次请求最多 60 秒。超时后配音、试听、克隆建模、主播驱动和多语言回 504「语音合成超时，请缩短台词后再试。」
 
-豆包在 17:39–17:43 只读审了 `db1996e` 到 `f58354f`。回执在 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`，17:46 读过。无阻断项。豆包自己的 `tsc --noEmit`（两个 tsconfig）退出码 0，`vitest run` 13 个文件、48 个测试通过，测试目录在系统临时目录。`9260c42` 是审计之后补的队列名额，豆包没看过这一笔。
+豆包在 17:39–17:43 只读审了 `db1996e` 到 `f58354f`，无阻断项。回执在 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`。`9260c42` 的队列名额是审完之后补的，豆包没看过。
 
-17:51 请求 `http://127.0.0.1:3000/api/health` 返回 200。开发服务是 17:49 拉起来的，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。
+17:51 请求 `http://127.0.0.1:3000/api/health` 返回 200。开发服务是 17:49 拉起来的。
 
 ## 不要写成已经通过
 
-- `7835635` 之后没有在页面上再点主播回答、整片配音、试听、克隆问候、多语言。那些会打到 Gemini。
-- 60 秒是每一次请求的上限。两个音色模型都卡死时，大约两分钟才回 504。没有用真实卡住的请求验过。
+- `7835635` 之后没有再在页面上点主播回答、配音、试听、克隆问候、多语言。
+- 60 秒是单次请求上限，两个模型都卡死时大约两分钟才回 504。
 - 15 分钟截止只停止等待，不取消底层进程。`enqueueWork` 没有调用方，也没有队列上限。
-- 口型仍是画布色块。音色仍是 Kore / Zephyr / Puck / Charon / Fenrir 的预置匹配。没有点过真实 Veo。没有账号，没有收费。
-- `localhost` 和 `127.0.0.1` 不是同一个 `localStorage`。令牌键是 `clipflow_admin_token`。
-- 13:39 的完整 `npm run check` 在 `db1996e` 之前。其后没有再跑完整的 `npm run check`。
+- 口型仍是画布色块，音色仍是五个预置声线，没有点过真实 Veo。
+- `localhost` 和 `127.0.0.1` 的令牌不互通。
+- 13:39 那次完整 `npm run check` 以后没有再跑过。
 
 ## 下一班
 
