@@ -64,7 +64,7 @@ export function PreviewStage({
   };
 
   return (
-    <section className="flex-1 min-w-0 bg-[#0B0D10] flex flex-col min-h-0">
+    <section className="flex-1 min-w-[420px] bg-[#0B0D10] flex flex-col min-h-0">
       {/* Stage Top Toolbar */}
       <div className="px-5 py-2.5 border-b border-zinc-800/80 bg-[#0E1015]/80 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 p-1 bg-[#0B0D10] rounded-lg border border-zinc-800/90">

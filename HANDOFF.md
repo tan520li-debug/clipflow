@@ -1,6 +1,6 @@
 # ClipFlow 交接
 
-写于 2026-11-18 00:09（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+写于 2026-11-18 00:18（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本机每天用的顺序
 
@@ -9,8 +9,16 @@
 1. `localhost` 打开时改去 `127.0.0.1`。这一笔做了。
 2. 不花钱打开剪辑台，确认能播放。这一笔做了。
 3. 整段工程写不下时，过长配音存旁边。已在 `0c2d867`。
-4. 窄窗里点「暂停」会点到 Facebook。00:11 把页面量成 1440×900：左栏 310、预览 812、右栏 318，三栏并排，没有叠在一起。点偏是自动化窗口只露出左栏。不改布局。
+4. 窄窗里预览会被挤没，播放键点到 Facebook。预览现在至少 420 宽，放不下就横向滚。00:18 在 800 宽量过：预览 420，整行内容宽 1048，播放和 Facebook 不重叠。点「播放」变成「暂停」，再点回到「播放」，播放头停在 0.3 秒。
 5. 不合 `main`，不推送，除非点名。不点 Veo，不点「让主播回答」。预览已暂停。
+
+## 本班（2026-11-18 00:18）
+
+窗口窄过三栏时，中间预览被压到没有可点的播放键。预览栏最少 420 像素，三栏放不下时整行横向滚动，时间线仍铺满窗口。
+
+00:18 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 18 个文件、77 个测试通过。同一分钟把页面设成 800×900：预览宽 420，行的滚动宽度 1048。播放按钮在 x=381，Facebook 在 x=201，矩形不相交。点「播放」后按钮变成「暂停」并获得焦点，再点回到「播放」，播放头 0.3 秒。没有点主播回答、配音、导出或说话视频。
+
+下面是 00:09 写下的原文。
 
 ## 本班（2026-11-18 00:08）
 
