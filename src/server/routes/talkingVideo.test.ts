@@ -6,10 +6,12 @@ import { describe, expect, it } from 'vitest';
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe('talking video abort wiring', () => {
-  it('stops waiting on generateVideos and getVideosOperation', () => {
+  it('stops waiting on generateVideos, getVideosOperation, and the video download', () => {
     const source = readFileSync(join(here, 'talkingVideo.ts'), 'utf8');
     expect(source).toContain('awaitWithAbort');
     expect(source).toContain('getVideosOperation');
+    expect(source).toContain('bytesFromVideo');
+    expect((source.match(/awaitWithAbort/g) || []).length).toBeGreaterThanOrEqual(4);
     expect(source).toMatch(/abortSignal:\s*signal/);
   });
 });

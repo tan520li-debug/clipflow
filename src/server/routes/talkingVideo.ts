@@ -86,12 +86,15 @@ async function bytesFromVideo(video: Video | undefined, signal?: AbortSignal): P
   }
   if (!video.uri) throw new Error('NO_VIDEO');
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const response = await fetchWithEnvProxy(video.uri, {
-    headers: apiKey ? { 'x-goog-api-key': apiKey } : undefined,
+  const response = await awaitWithAbort(
+    fetchWithEnvProxy(video.uri, {
+      headers: apiKey ? { 'x-goog-api-key': apiKey } : undefined,
+      signal,
+    }) as Promise<{ ok: boolean; status: number; arrayBuffer: () => Promise<ArrayBuffer> }>,
     signal,
-  });
+  );
   if (!response.ok) throw new Error(`VIDEO_DOWNLOAD_${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = Buffer.from(await awaitWithAbort(response.arrayBuffer(), signal));
   if (bytes.length === 0 || bytes.length > MAX_VIDEO_BYTES) throw new Error('NO_VIDEO');
   return bytes;
 }
@@ -168,6 +171,7 @@ async function generateTalkingVideo(body: unknown, signal?: AbortSignal): Promis
       };
     } catch (err: unknown) {
       if (err instanceof Error && err.message === JOB_DEADLINE) throw err;
+      if (signal?.aborted) throw new Error(JOB_DEADLINE);
       lastErr = err;
       if (isQuotaExceededError(err)) break;
       if (index < models.length - 1) {

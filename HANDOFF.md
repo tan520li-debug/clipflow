@@ -6,9 +6,9 @@
 
 18:42 读了 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-队列截止与Gemini信号.md`。豆包写于 18:35，读的是 18:26–18:35。范围是 `9260c42`、`7ba6eb4`、`0c29097`、`7aa7eba`。当时 `HEAD` 是 `f8c7cd8`，`git log 7aa7eba..HEAD` 只有派单。结论是无阻断项。17:43 那份回执没有被覆盖。
 
-豆包 18:33 在仓库根目录跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试通过。`JOBS_DIR`、`RATE_LIMIT_FILE`、`CLIPFLOW_TMP_DIR` 指到系统临时目录，没有写仓库 `data/`。这是豆包自己的读数，不是照抄 Cursor 自报。
+豆包 18:33 在仓库根目录跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试通过。`JOBS_DIR`、`RATE_LIMIT_FILE`、`CLIPFLOW_TMP_DIR` 指到系统临时目录，没有写仓库 `data/`。这是豆包自己的读数，不是照抄 Cursor 自报。18:44 Cursor 在改完下载中止之后又跑了完整 `npm run check`，退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试通过。
 
-非阻断观察：说话视频最后下载字节的 `bytesFromVideo` 把 `signal` 传给 `fetchWithEnvProxy`，没有走 `awaitWithAbort`。任务恰在下载阶段截止会落 502「说话视频没有生成」而不是 504「任务超时」。不产生 `VIDEO_TIMEOUT`，与派单不矛盾。豆包建议包一层 `awaitWithAbort` 或在 catch 里看 `signal.aborted`，非强制。
+非阻断观察：说话视频最后下载字节的 `bytesFromVideo` 把 `signal` 传给 `fetchWithEnvProxy`，没有走 `awaitWithAbort`。任务恰在下载阶段截止会落 502「说话视频没有生成」而不是 504「任务超时」。不产生 `VIDEO_TIMEOUT`，与派单不矛盾。豆包建议包一层 `awaitWithAbort` 或在 catch 里看 `signal.aborted`，非强制。18:42 之后按这条建议改：下载和读字节走 `awaitWithAbort`，catch 里 `signal.aborted` 也重抛 `JOB_DEADLINE`。豆包没看过这一笔。
 
 ## 给豆包的续审（2026-11-17 18:25）
 
