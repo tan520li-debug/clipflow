@@ -26,6 +26,7 @@ import type {
   VoiceoverVoice,
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
+import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
 import { StudioAudioEngine } from '../../utils/audioEngine';
 import {
   alignProjectTimelineToVoiceover,
@@ -484,27 +485,15 @@ export function useStudioCommands(input: StudioCommandInput) {
     const info = findClipAtTime(currentProject.clips, currentTime);
     if (!info) return;
     const { index, clip, localTime } = info;
-    if (localTime < 0.45 || clip.duration - localTime < 0.45) return;
-
-    const firstHalf: TimelineClip = {
-      ...clip,
-      duration: Number(localTime.toFixed(2)),
-    };
-    const secondHalf: TimelineClip = {
-      ...clip,
-      id: `${clip.id}-split-${Date.now()}`,
-      label: `${clip.label} (2)`,
-      trimStart: Number((clip.trimStart + localTime).toFixed(2)),
-      duration: Number((clip.duration - localTime).toFixed(2)),
-      transition: 'zoom-punch',
-    };
+    const split = splitClipAtLocalTime(clip, localTime, `${clip.id}-split-${Date.now()}`);
+    if (!split) return;
 
     updateCurrentProject((prev) => {
       const nextClips = [...prev.clips];
-      nextClips.splice(index, 1, firstHalf, secondHalf);
+      nextClips.splice(index, 1, split.first, split.second);
       return { ...prev, clips: nextClips };
     });
-    setSelectedClipId(secondHalf.id);
+    setSelectedClipId(split.second.id);
     setSelectedSubtitleId(null);
   };
 

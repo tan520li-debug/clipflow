@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 01:01（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 01:01）
+
+时间线「分割」会把后半段转场改成缩放跳转，钩子标签也跟着复制。现在后半段是硬切，钩子留在前半段。离两端不足 0.45 秒不切。
+
+01:00 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 19 个文件、83 个测试通过。没有在页面上点分割，避免改掉已保存的手冲时间线。没有点主播回答、配音、导出或说话视频。
+
+下面是 00:22 写下的原文。
+
 写于 2026-11-18 00:22（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 00:22）
