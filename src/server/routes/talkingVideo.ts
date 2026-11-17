@@ -141,6 +141,7 @@ async function generateTalkingVideo(body: unknown, signal?: AbortSignal): Promis
           resolution: '720p',
           personGeneration: 'allow_adult',
           generateAudio: true,
+          ...(signal ? { abortSignal: signal } : {}),
         },
       });
       operation = await waitForVideo(ai, operation, signal);

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
+import { delay, isJobAborted, jobDeadlineError, mergeAbortSignal } from './jobs/abort.ts';
 
 const PUBLIC_STABLE_TEXT_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'] as const;
 const PUBLIC_STABLE_TTS_MODELS = ['gemini-2.5-flash-preview-tts', 'gemini-3.8-flash-lite-tts'] as const;
@@ -92,10 +93,10 @@ export async function generateTextContentWithFallback(
   for (let idx = 0; idx < modelsToTry.length; idx++) {
     const currentModel = modelsToTry[idx];
     const adaptedConfig = adaptConfigForModel(currentModel, params.config) ?? {};
+    const callerSignal = (adaptedConfig as { abortSignal?: AbortSignal }).abortSignal;
     const requestConfig = {
       ...adaptedConfig,
-      abortSignal:
-        (adaptedConfig as { abortSignal?: AbortSignal }).abortSignal ?? AbortSignal.timeout(20_000),
+      abortSignal: mergeAbortSignal(20_000, callerSignal),
     };
     try {
       return await ai.models.generateContent({
@@ -104,19 +105,22 @@ export async function generateTextContentWithFallback(
         config: requestConfig as never,
       });
     } catch (err: unknown) {
+      if (isJobAborted()) throw jobDeadlineError();
       lastErr = err;
       if (isServiceBusyError(err)) {
-        await new Promise((r) => setTimeout(r, 500));
+        await delay(500);
+        if (isJobAborted()) throw jobDeadlineError();
         try {
           return await ai.models.generateContent({
             model: currentModel,
             contents: params.contents as never,
             config: {
               ...requestConfig,
-              abortSignal: AbortSignal.timeout(20_000),
+              abortSignal: mergeAbortSignal(20_000, callerSignal),
             } as never,
           });
         } catch (retryErr: unknown) {
+          if (isJobAborted()) throw jobDeadlineError();
           lastErr = retryErr;
         }
       }

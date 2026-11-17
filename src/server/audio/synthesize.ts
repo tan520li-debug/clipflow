@@ -4,6 +4,7 @@ import {
   isQuotaExceededError,
   isServiceBusyError,
 } from '../gemini.ts';
+import { delay, isJobAborted, jobDeadlineError, mergeAbortSignal } from '../jobs/abort.ts';
 import { ensurePlayableWav, stripScriptTags } from './wav.ts';
 
 const ttsModelQuotaCooldownUntil = new Map<string, number>();
@@ -87,7 +88,7 @@ export async function synthesizeStyledSpeech(
           contents: [{ role: 'user', parts: attempt.parts as never }],
           config: {
             responseModalities: ['AUDIO'],
-            abortSignal: AbortSignal.timeout(timeoutMs),
+            abortSignal: mergeAbortSignal(timeoutMs),
             ...(attempt.includeSpeechConfig
               ? {
                   speechConfig: {
@@ -109,6 +110,7 @@ export async function synthesizeStyledSpeech(
           };
         }
       } catch (err: unknown) {
+        if (isJobAborted()) throw jobDeadlineError();
         lastErr = err;
         const msg = err instanceof Error ? err.message : String(err);
         if (isQuotaExceededError(err)) {
@@ -119,14 +121,15 @@ export async function synthesizeStyledSpeech(
           break;
         }
         if (isServiceBusyError(err)) {
-          await new Promise((r) => setTimeout(r, 700));
+          await delay(700);
+          if (isJobAborted()) throw jobDeadlineError();
           try {
             const retryResp = await ai.models.generateContent({
               model: currentModel,
               contents: [{ role: 'user', parts: attempt.parts as never }],
               config: {
                 responseModalities: ['AUDIO'],
-                abortSignal: AbortSignal.timeout(timeoutMs),
+                abortSignal: mergeAbortSignal(timeoutMs),
                 ...(attempt.includeSpeechConfig
                   ? {
                       speechConfig: {
@@ -151,6 +154,7 @@ export async function synthesizeStyledSpeech(
               };
             }
           } catch (retryErr: unknown) {
+            if (isJobAborted()) throw jobDeadlineError();
             lastErr = retryErr;
           }
           break;

@@ -1,23 +1,24 @@
 # ClipFlow 交接
 
-写于 2026-11-17 18:00（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。18:00 在仓库根目录读了 `git status --short --branch`。上一笔交接提交是 `5939c8b`。`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+写于 2026-11-17 18:06（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔代码是 `7ba6eb4`。`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班复盘（2026-11-17）
 
-17:51 时代码终点是 `9260c42`。其后 `c173cd6`、`b6b3e66`、`5939c8b` 只动 `HANDOFF.md`。18:00 继续推进，补了两件交接里写明还没做的：
+18:06 把任务截止接到 Gemini 请求上：
 
-- `enqueueWork` 走 `admitJob`。队列满了返回 `{ full: true }`，不再自己写记录、也不再绕过上限。
-- 任务截止会 `abort` 工作信号。转码收到信号后先记下超时再 `SIGKILL` ffmpeg。说话视频的等待循环和下载会停。JSON 任务在处理函数前后检查信号。
+- 任务跑在 `runWithJobAbort` 里。文本 `generateContent`（20 秒）和语音合成（60 秒）的 `abortSignal` 与任务信号合并。任务一截止，不再换下一个模型。
+- 说话视频的 `generateVideos` 配置带上同一条任务信号。等待循环和下载本来就会停。
 
-17:59 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 14 个文件、54 个测试通过。转码中止测的是假的 `spawn`，不是真实 ffmpeg 成片。
+18:06 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 16 个文件、61 个测试通过。Gemini 中止测的是假的 `generateContent`，没有打真实接口。`generateVideos` 有没有认 `abortSignal`，未用真实 Veo 验。
 
-豆包在 17:39–17:43 只读审了 `db1996e` 到 `f58354f`，无阻断项。回执在 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`。`9260c42` 和这一笔截止取消，豆包都没看过。
+豆包在 17:39–17:43 只读审了 `db1996e` 到 `f58354f`，无阻断项。回执在 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`。`9260c42` 之后的队列名额、截止取消、Gemini 信号，豆包都没看过。
 
-18:00 停掉 17:49 那条开发服务后重新执行 `npm run dev`，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。18:00:16 请求 `http://127.0.0.1:3000/api/health` 返回 200。
+18:06 停掉 18:00 那条开发服务后重新执行 `npm run dev`，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。18:06:50 请求 `http://127.0.0.1:3000/api/health` 返回 200。
 
 此前已经做完、不要再做一遍的：
 
-- 任务有 15 分钟截止，队列最多 8 个。17:49 起，名额在写记录之前先占上。
+- 任务有 15 分钟截止，队列最多 8 个。17:49 起，名额在写记录之前先占上。`enqueueWork` 走 `admitJob`。
+- 任务截止会 `abort` 工作信号。转码收到信号后先记下超时再 `SIGKILL` ffmpeg。
 - 预置音色的合成从 `synthesizeStyledSpeech` 出去，返回前收成 WAV。空音频和认不出的字节不会被标成 `audio/wav`。
 - 顶栏没填访问令牌时，页面提示去填，并且不发请求。
 - 语音合成每次请求最多 60 秒。超时后配音、试听、克隆建模、主播驱动和多语言回 504「语音合成超时，请缩短台词后再试。」
@@ -25,8 +26,8 @@
 ## 不要写成已经通过
 
 - `7835635` 之后没有再在页面上点主播回答、配音、试听、克隆问候、多语言。
-- 60 秒是单次请求上限，两个模型都卡死时大约两分钟才回 504。
-- JSON 任务里正在进行的 Gemini `generateContent` 仍走自己的 20 秒 / 60 秒，没有接到任务截止信号。`generateVideos` 那一次请求本身没有 abort。
+- 60 秒是单次请求上限，两个模型都卡死时大约两分钟才回 504。任务截止默认 15 分钟，所以这条仍在。
+- `getVideosOperation` 轮询没有单独的 abort。`generateVideos` 是否认配置里的 `abortSignal`，未用真实 Veo 验。
 - 口型仍是画布色块，音色仍是五个预置声线，没有点过真实 Veo。
 - `localhost` 和 `127.0.0.1` 的令牌不互通。
 

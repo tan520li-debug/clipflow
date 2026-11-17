@@ -3,14 +3,17 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { jobAbortSignal } from './abort.ts';
 import { acceptJsonJob } from './http.ts';
 import { readJob } from './store.ts';
 
 let previousJobsDir: string | undefined;
+let previousDeadline: string | undefined;
 let dir = '';
 
 beforeEach(async () => {
   previousJobsDir = process.env.JOBS_DIR;
+  previousDeadline = process.env.CLIPFLOW_JOB_DEADLINE_MS;
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'clipflow-http-jobs-'));
   process.env.JOBS_DIR = dir;
 });
@@ -18,6 +21,8 @@ beforeEach(async () => {
 afterEach(async () => {
   if (previousJobsDir === undefined) delete process.env.JOBS_DIR;
   else process.env.JOBS_DIR = previousJobsDir;
+  if (previousDeadline === undefined) delete process.env.CLIPFLOW_JOB_DEADLINE_MS;
+  else process.env.CLIPFLOW_JOB_DEADLINE_MS = previousDeadline;
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -99,6 +104,38 @@ describe('acceptJsonJob', () => {
     const jobId = (state.body as { jobId?: unknown }).jobId;
     expect(typeof jobId).toBe('string');
     await waitForTerminal(String(jobId));
+  });
+
+  it('aborts handler work when the job deadline is reached', async () => {
+    process.env.CLIPFLOW_JOB_DEADLINE_MS = '40';
+    let aborted = false;
+    const handler = acceptJsonJob('demo', async (_req, res) => {
+      const signal = jobAbortSignal();
+      if (!signal) throw new Error('missing job signal');
+      await new Promise((_, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted = true;
+            reject(new Error('JOB_DEADLINE'));
+          },
+          { once: true },
+        );
+      });
+      res.json({ ok: true });
+    });
+
+    const state = await invoke(handler, {});
+    expect(state.statusCode).toBe(202);
+    const jobId = (state.body as { jobId?: unknown }).jobId;
+    expect(typeof jobId).toBe('string');
+    await waitForTerminal(String(jobId));
+    expect(aborted).toBe(true);
+    expect(await readJob(String(jobId))).toMatchObject({
+      status: 'failed',
+      httpStatus: 504,
+      error: '任务超时，已停止等待。',
+    });
   });
 
   it('returns 202 and a jobId without a validate callback', async () => {

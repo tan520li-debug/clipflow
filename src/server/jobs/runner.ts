@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { JOB_DEADLINE, runWithJobAbort } from './abort.ts';
 import {
   binaryPathFor,
   completeJob,
@@ -8,6 +9,8 @@ import {
   failJob,
   markRunning,
 } from './store.ts';
+
+export { JOB_DEADLINE } from './abort.ts';
 
 export interface JobHttpResult {
   httpStatus: number;
@@ -22,7 +25,6 @@ export interface JobHttpResult {
 export type JobWork = (signal: AbortSignal) => Promise<JobHttpResult>;
 
 const DEFAULT_JOB_DEADLINE_MS = 15 * 60 * 1000;
-export const JOB_DEADLINE = 'JOB_DEADLINE';
 
 const queue: Array<() => Promise<void>> = [];
 let busy = false;
@@ -82,7 +84,10 @@ function pump(): void {
 async function execute(id: string, work: JobWork): Promise<void> {
   await markRunning(id);
   try {
-    const result = await withDeadline(work, jobDeadlineMs());
+    const result = await withDeadline(
+      (signal) => runWithJobAbort(signal, () => work(signal)),
+      jobDeadlineMs(),
+    );
     if (result.resultKind === 'binary') {
       const target = binaryPathFor(id);
       if (result.binaryPath) {
