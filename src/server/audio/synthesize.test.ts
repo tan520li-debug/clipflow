@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { GoogleGenAI } from '@google/genai';
 import { describe, expect, it } from 'vitest';
-import { synthesizeStyledSpeech } from './synthesize';
+import { synthesizeStyledSpeech, SPEECH_SYNTHESIS_TIMEOUT_MS } from './synthesize';
 import { extractWavMelPhonemeAlignment, getWavDurationSec } from './wav';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -75,5 +75,33 @@ describe('synthesizeStyledSpeech', () => {
       expect(source).toContain('synthesizeStyledSpeech');
       expect(source).not.toContain("responseModalities: ['AUDIO']");
     }
+  });
+
+  it('stops a hung speech request before the 15 minute job deadline', async () => {
+    expect(SPEECH_SYNTHESIS_TIMEOUT_MS).toBe(60_000);
+    const hanging = {
+      models: {
+        generateContent: (req: { config?: { abortSignal?: AbortSignal } }) =>
+          new Promise((_resolve, reject) => {
+            const signal = req.config?.abortSignal;
+            if (!signal) {
+              reject(new Error('missing abort'));
+              return;
+            }
+            const fail = () => reject(signal.reason ?? new Error('aborted'));
+            if (signal.aborted) fail();
+            else signal.addEventListener('abort', fail, { once: true });
+          }),
+      },
+    } as unknown as GoogleGenAI;
+    const started = Date.now();
+    await expect(
+      synthesizeStyledSpeech(hanging, {
+        voiceName: 'Kore',
+        spokenText: '几克豆子',
+        timeoutMs: 30,
+      })
+    ).rejects.toThrow(/aborted|timeout/i);
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });

@@ -8,6 +8,8 @@ import { ensurePlayableWav, stripScriptTags } from './wav.ts';
 
 const ttsModelQuotaCooldownUntil = new Map<string, number>();
 
+export const SPEECH_SYNTHESIS_TIMEOUT_MS = 60_000;
+
 export async function synthesizeStyledSpeech(
   ai: GoogleGenAI,
   opts: {
@@ -15,9 +17,11 @@ export async function synthesizeStyledSpeech(
     voiceName: string;
     spokenText: string;
     stylePrompt?: string;
+    timeoutMs?: number;
   }
 ) {
   const { preferLite = false, voiceName, spokenText, stylePrompt } = opts;
+  const timeoutMs = opts.timeoutMs ?? SPEECH_SYNTHESIS_TIMEOUT_MS;
   const cleanStyle = (stylePrompt || '').trim();
 
   const rawCandidates = getTtsModelCandidates(preferLite);
@@ -73,6 +77,7 @@ export async function synthesizeStyledSpeech(
           contents: [{ role: 'user', parts: attempt.parts as never }],
           config: {
             responseModalities: ['AUDIO'],
+            abortSignal: AbortSignal.timeout(timeoutMs),
             ...(attempt.includeSpeechConfig
               ? {
                   speechConfig: {
@@ -111,6 +116,7 @@ export async function synthesizeStyledSpeech(
               contents: [{ role: 'user', parts: attempt.parts as never }],
               config: {
                 responseModalities: ['AUDIO'],
+                abortSignal: AbortSignal.timeout(timeoutMs),
                 ...(attempt.includeSpeechConfig
                   ? {
                       speechConfig: {
