@@ -1,6 +1,10 @@
 # ClipFlow 交接
 
-写于 2026-11-17 18:14（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔代码是 `0c29097`。`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+写于 2026-11-17 18:25（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。代码终点是 `7aa7eba`。`origin/main` 仍是 `83622e6`。18:24 读了 `git rev-parse 7aa7eba`、`git rev-parse origin/main` 和 `git log --oneline origin/main..7aa7eba`，相对主线 24 笔。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 给豆包的续审（2026-11-17 18:25）
+
+18:25 写下 `docs/派单-20261117-Cursor-给豆包-续审-队列截止与Gemini信号.md`，同样一份在 `D:\Doubao\clipflow-audit-20261117\`。要审的是 `9260c42`、`7ba6eb4`、`0c29097`、`7aa7eba`。上一份只读到 `f58354f`。回执写到 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-队列截止与Gemini信号.md`，不要覆盖 17:43 那份。豆包只读，不要改这个仓库。这份派单入仓之后，`HEAD` 会比 `7aa7eba` 新，多出来的只应是派单和 `HANDOFF.md`。
 
 ## 本班复盘（2026-11-17）
 
@@ -31,7 +35,7 @@
 
 ## 下一班
 
-不要推送，不要合进 `main`，除非点名。豆包的无阻断只覆盖到 `f58354f`。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+不要推送，不要合进 `main`，除非点名。豆包 17:43 的无阻断只覆盖到 `f58354f`。续审还没回。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
 
 下面是 13:41 写下的原文。
 
