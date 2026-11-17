@@ -71,4 +71,20 @@ describe('startJob', () => {
     expect(extra).toEqual({ full: true });
     await waitForStatus(hold.id, 'failed');
   });
+
+  it('reserves the only slot before either admission finishes writing', async () => {
+    process.env.CLIPFLOW_JOB_QUEUE_MAX = '1';
+    const results = await Promise.all([admitJob('a'), admitJob('b')]);
+    const accepted = results.filter((result) => 'id' in result);
+    const rejected = results.filter((result) => 'full' in result);
+    expect(accepted).toHaveLength(1);
+    expect(rejected).toEqual([{ full: true }]);
+    const id = accepted[0] && 'id' in accepted[0] ? accepted[0].id : '';
+    startJob(id, async () => ({
+      httpStatus: 200,
+      resultKind: 'json',
+      jsonBody: { ok: true },
+    }));
+    await waitForStatus(id, 'succeeded');
+  });
 });

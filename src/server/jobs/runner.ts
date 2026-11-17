@@ -24,6 +24,7 @@ const JOB_DEADLINE = 'JOB_DEADLINE';
 
 const queue: Array<() => Promise<void>> = [];
 let busy = false;
+const reservedIds = new Set<string>();
 
 function jobDeadlineMs(): number {
   const raw = Number(process.env.CLIPFLOW_JOB_DEADLINE_MS);
@@ -102,6 +103,7 @@ async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<
 }
 
 export function startJob(id: string, work: () => Promise<JobHttpResult>): void {
+  reservedIds.delete(id);
   queue.push(() => execute(id, work));
   pump();
 }
@@ -117,17 +119,19 @@ export function jobQueueLimit(): number {
 }
 
 export function jobQueueFull(): boolean {
-  return queue.length + (busy ? 1 : 0) >= jobQueueLimit();
+  return queue.length + (busy ? 1 : 0) + reservedIds.size >= jobQueueLimit();
 }
 
 export async function admitJob(kind: string): Promise<{ id: string } | { full: true }> {
   if (jobQueueFull()) return { full: true };
-  const created = await createJob(kind);
-  if (jobQueueFull()) {
-    await failJob(created.id, 503, QUEUE_FULL_MESSAGE);
-    return { full: true };
+  const id = crypto.randomUUID();
+  reservedIds.add(id);
+  try {
+    return await createJob(kind, id);
+  } catch (err) {
+    reservedIds.delete(id);
+    throw err;
   }
-  return created;
 }
 
 export function enqueueWork(kind: string, work: () => Promise<JobHttpResult>): string {
