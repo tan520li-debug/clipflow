@@ -1,6 +1,41 @@
 # ClipFlow 交接
 
+写于 2026-11-17 22:58（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。22:58 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/main`、`git log --oneline origin/main..HEAD` 和 `git rev-list --count origin/main..HEAD`。`HEAD` 是 `0b7cba5`。功能代码终点是 `5a6ab92`。`origin/main` 仍是 `83622e6`。相对主线 29 笔。没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`。`5a6ab92` 之后只有派单和交接：`b978d1f`、`0b7cba5`。写下这段复盘会再占一笔，只动 `HANDOFF.md`。
+
+## 本班复盘（2026-11-17）
+
+这一班接到时，17:51 的代码终点是 `9260c42`。做到 22:58，功能停在 `5a6ab92`。做完的是这些，不要再做一遍：
+
+- 队列名额在写记录之前先占上。`enqueueWork` 走 `admitJob`，满了返回 `{ full: true }`。
+- 任务截止会 abort 工作信号。转码先记下超时再 `SIGKILL` ffmpeg。文本 20 秒、语音整次 60 秒与任务信号合并；到期不再换下一个模型。
+- 说话视频的 `generateVideos`、`getVideosOperation`、下载 `fetch` 和 `arrayBuffer` 都走 `awaitWithAbort`。截止回 504「任务超时，已停止等待。」不落 502，不落 VIDEO_TIMEOUT。
+- 预置音色仍从 `synthesizeStyledSpeech` 出去，返回前收成 WAV。顶栏没令牌就不发请求。
+
+豆包三轮只读，都无阻断项：
+
+- 17:39–17:43 审 `db1996e` 到 `f58354f`。回执 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-只读审计.md`。
+- 18:26–18:35 审 `9260c42`、`7ba6eb4`、`0c29097`、`7aa7eba`。回执 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-队列截止与Gemini信号.md`。豆包 18:33 自报完整 `npm run check` 退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试。
+- 约 19:02–19:03 审 `5a6ab92`。回执 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-说话视频下载截止.md`。豆包 19:03:29 跑了 `talkingVideo.test.ts`，1 个通过。完整 `npm run check` 豆包没复算。
+
+Cursor 自报：18:44 完整 `npm run check` 退出码 0：Biome 16 个文件，Vitest 17 个文件、64 个测试。22:58 请求 `http://127.0.0.1:3000/api/health` 返回 200。开发服务是 18:44 拉起来的，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。
+
+合主线卡在点名。审已经到 `5a6ab92`。
+
+## 不要写成已经通过
+
+- `7835635` 之后没有再在页面上点主播回答、配音、试听、克隆问候、多语言、生成说话视频。
+- `generateVideos` / `getVideosOperation` / 下载是否真取消底层 HTTP，未用真实 Veo 验。
+- 口型仍是画布色块，音色仍是五个预置声线。
+- `localhost` 和 `127.0.0.1` 的令牌不互通。
+
+## 下一班
+
+不要推送，不要合进 `main`，除非点名。功能审到 `5a6ab92`。不要提交 `.env`、`data/`、`cursor-studio-followup.patch`。不要改 `src/server/gemini.ts` 的模型列表。不要按时间删 `data/media`。不要开做账号、收费、口型模型、实时对讲、服务端工程库。不要为了验证去点 Veo 或再打「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 19:11 写下的原文。
+
 写于 2026-11-17 19:11（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点是 `5a6ab92`。派单提交是 `b978d1f`。`origin/main` 仍是 `83622e6`。没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
 
 ## 豆包续审回执（2026-11-17 19:11）
 
