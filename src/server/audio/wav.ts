@@ -183,6 +183,55 @@ export function buildMonoWavBase64(samples: Int16Array, sampleRate: number): str
   return Buffer.concat([header, pcmBuf]).toString('base64');
 }
 
+function sampleRateFromMime(mimeType: string): number {
+  const match = /(?:^|[;\s])rate=(\d+)/i.exec(mimeType);
+  const rate = match ? Number(match[1]) : 24000;
+  if (!Number.isFinite(rate) || rate < 8000 || rate > 192000) return 24000;
+  return rate;
+}
+
+function isRawPcmMime(mimeType: string): boolean {
+  return /audio\/(?:L16|pcm|raw)\b/i.test(mimeType) || /codec=pcm/i.test(mimeType);
+}
+
+function parseRawPcm16Le(
+  base64: string,
+  sampleRate: number,
+): { sampleRate: number; samples: Int16Array } | null {
+  try {
+    const clean = base64.includes(',') ? base64.split(',')[1] : base64;
+    const buf = Buffer.from(clean, 'base64');
+    const frames = Math.floor(buf.length / 2);
+    if (frames <= 0) return null;
+    const samples = new Int16Array(frames);
+    for (let i = 0; i < frames; i++) samples[i] = buf.readInt16LE(i * 2);
+    return { sampleRate, samples };
+  } catch {
+    return null;
+  }
+}
+
+function parseSegmentPcm(segment: {
+  data: string;
+  mimeType: string;
+}): { sampleRate: number; samples: Int16Array } | null {
+  const wav = parseWavPcmMonoInt16(segment.data);
+  if (wav) return wav;
+  if (!isRawPcmMime(segment.mimeType || '')) return null;
+  return parseRawPcm16Le(segment.data, sampleRateFromMime(segment.mimeType || ''));
+}
+
+function wavFromPcm(parsed: {
+  sampleRate: number;
+  samples: Int16Array;
+}): { audioBase64: string; mimeType: string; durationSec: number } {
+  return {
+    audioBase64: buildMonoWavBase64(parsed.samples, parsed.sampleRate),
+    mimeType: 'audio/wav',
+    durationSec: Number(Math.max(0.4, parsed.samples.length / parsed.sampleRate).toFixed(2)),
+  };
+}
+
 export function concatenateWavBase64Segments(
   segments: Array<{ data: string; mimeType: string }>,
   pauseMs = 120
@@ -190,7 +239,9 @@ export function concatenateWavBase64Segments(
   if (segments.length === 0) {
     throw new Error('No audio segments provided');
   }
-  if (segments.length === 1) {
+
+  const parsedList = segments.map((s) => parseSegmentPcm(s));
+  if (parsedList.some((p) => p === null)) {
     return {
       audioBase64: segments[0].data,
       mimeType: segments[0].mimeType || 'audio/wav',
@@ -198,14 +249,16 @@ export function concatenateWavBase64Segments(
     };
   }
 
-  const parsedList = segments.map((s) => parseWavPcmMonoInt16(s.data));
-  if (parsedList.some((p) => p === null)) {
-    // Fallback to first segment if non-WAV returned
+  if (segments.length === 1 && getWavDurationSec(segments[0].data) !== null) {
     return {
       audioBase64: segments[0].data,
       mimeType: segments[0].mimeType || 'audio/wav',
       durationSec: getWavDurationSec(segments[0].data),
     };
+  }
+
+  if (segments.length === 1) {
+    return wavFromPcm(parsedList[0] as { sampleRate: number; samples: Int16Array });
   }
 
   const valid = parsedList as Array<{ sampleRate: number; samples: Int16Array }>;

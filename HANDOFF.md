@@ -37,7 +37,8 @@
 - 克隆失败时页面用红色文案，不会再写「克隆完成」。音色仍是 Kore / Zephyr / Puck / Charon / Fenrir 里的预置匹配，不是本机声纹模型。
 - 时间线、简报、风格、平台写在 IndexedDB `clipflow` / `records`，键 `clipflow_studio_session_v1`。2026-11-17 上午在页面上改过简报「刷新保留验证：早八冰拿铁要还在」，刷新后还在。
 - 口型是画布上的嘴形色块（`drawDigitalHumanFacialMuscleRig`），不是神经口型模型。本机 `D:\w2l-work` 只有 ffmpeg，没有 MuseTalk / CosyVoice。
-- 「让主播回答」走 `POST /api/digital-human/reply`，空话当场 400。上午点过「几克豆子？」：第一次两个文本模型都是 503，页面显示「对话服务正忙，请稍后重试。」第二次请求挂住，后来给文本调用加了 20 秒 `AbortSignal.timeout`。那两次没有产出配音。2026-11-17 16:26 用同一句再打了一次：先回 202，任务 `39526882-67bd-4b1c-af8e-09761f3dc6ab` 约 16 秒后 `succeeded`，HTTP 200，文字是「这个问题问得好，不过豆子的大小和重量都不一样，建议你直接用厨房秤称一下，这样才最精准哦。」这条接口只回文字，没有配音。
+- 「让主播回答」走 `POST /api/digital-human/reply`，空话当场 400。上午点过「几克豆子？」：第一次两个文本模型都是 503，页面显示「对话服务正忙，请稍后重试。」第二次请求挂住，后来给文本调用加了 20 秒 `AbortSignal.timeout`。那两次没有产出配音。2026-11-17 16:26 用同一句再打了一次：先回 202，任务 `39526882-67bd-4b1c-af8e-09761f3dc6ab` 约 16 秒后 `succeeded`，HTTP 200，文字是「这个问题问得好，不过豆子的大小和重量都不一样，建议你直接用厨房秤称一下，这样才最精准哦。」这条接口只回文字。
+- 16:28 用这句文字打了 `POST /api/digital-human/drive`（预置音色 Kore）。任务 `339bfb2c-e77e-4c39-9039-f84b6ccdab9c` 约 8 秒后 `succeeded`。当时返回 `audio/L16`，时长 10.9 秒是按字数估的，没有口型对齐。浏览器 `Audio` 播不了这种裸 PCM。单段 L16 现已收成 WAV。16:33 用保存的那段音频离线包出来是 `audio/wav`，时长 7.97 秒，对齐有结果。同一分钟 `npx vitest run src/server/audio/wav.test.ts` 2 个通过。没有在页面上点播放。16:34 重新执行 `npm run dev`，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。
 - 说话视频按钮已接上 `POST /api/digital-human/talking-video`（Veo，会花钱）。空台词验证过，返回 400「请先写一句要让主播说的话。」没有发过真实生成。
 
 ## 下一班
