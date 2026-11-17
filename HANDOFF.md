@@ -1,5 +1,25 @@
 # ClipFlow 交接
 
+写于 2026-11-18 00:09（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本机每天用的顺序
+
+公网上线不做。账号、收费、口型模型、实时对讲、服务端工程库仍不开。
+
+1. `localhost` 打开时改去 `127.0.0.1`。这一笔做了。
+2. 不花钱打开剪辑台，确认能播放。这一笔做了。
+3. 整段工程写不下时，过长配音存旁边。已在 `0c2d867`。
+4. 时间线底部「播放 / 暂停」在自动化点击时点到了上面的 Facebook 按钮。「播放预览」能开始播放。下一刀先确认是不是真重叠，再改布局。
+5. 不合 `main`，不推送，除非点名。不点 Veo，不点「让主播回答」。
+
+## 本班（2026-11-18 00:08）
+
+`localhost` 和 `127.0.0.1` 的令牌、语言、工程各存一份。README 写的地址是 `127.0.0.1`。页面若从 `localhost` 打开，会改到同端口的 `127.0.0.1`，路径和查询保留。
+
+00:07 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 18 个文件、77 个测试通过。00:08 开发服务日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。同一分钟请求 `http://127.0.0.1:3000/api/health` 返回 200。浏览器打开 `http://localhost:3000/` 后地址变成 `http://127.0.0.1:3000/`。剪辑台打开，简报是 IndexedDB 里的「刷新保留验证：早八冰拿铁要还在」。点了「播放预览」，按钮变成「暂停」，播放头从 0.0 秒走到 4.6 秒。没有点主播回答、配音、导出或说话视频。底部「暂停」那一下被 Facebook 按钮挡住，没点上。
+
+下面是 00:05 写下的原文。
+
 写于 2026-11-18 00:05（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 00:04）
