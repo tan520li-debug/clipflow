@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 01:53（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 01:53）
+
+「对齐节拍点」会把镜头时长收成两拍的整数倍。视频如果入点后面剩的素材更短，就停在素材结尾，不再播过文件。图片没有这条上限。
+
+01:52 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 20 个文件、86 个测试通过。128 BPM 下 2.2 秒收到 1.88 秒；入点 1.6 秒、素材 3 秒时收到 1.4 秒。没有在页面上点对齐，避免改掉已保存的手冲时间线。没有点主播回答、配音、导出或说话视频。
+
+下面是 01:01 写下的原文。
+
 写于 2026-11-18 01:01（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 01:01）

@@ -27,6 +27,7 @@ import type {
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
 import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
+import { snapClipsToBeat } from '../../client/timeline/snapBeat';
 import { StudioAudioEngine } from '../../utils/audioEngine';
 import {
   alignProjectTimelineToVoiceover,
@@ -498,16 +499,9 @@ export function useStudioCommands(input: StudioCommandInput) {
   };
 
   const handleSnapToBeat = () => {
-    const beatSec = (60 / Math.max(70, currentProject.audio.bpm)) * 2;
     updateCurrentProject((prev) => ({
       ...prev,
-      clips: prev.clips.map((c) => {
-        const beats = Math.max(1, Math.round(c.duration / beatSec));
-        return {
-          ...c,
-          duration: Number(Math.max(1.0, beats * beatSec).toFixed(2)),
-        };
-      }),
+      clips: snapClipsToBeat(prev.clips, prev.audio.bpm, assetsMap),
     }));
   };
 
