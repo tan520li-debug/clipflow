@@ -4,7 +4,7 @@ import {
   isQuotaExceededError,
   isServiceBusyError,
 } from '../gemini.ts';
-import { stripScriptTags } from './wav.ts';
+import { ensurePlayableWav, stripScriptTags } from './wav.ts';
 
 const ttsModelQuotaCooldownUntil = new Map<string, number>();
 
@@ -86,9 +86,10 @@ export async function synthesizeStyledSpeech(
         });
         const inline = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
         if (inline?.data) {
+          const playable = ensurePlayableWav({ data: inline.data, mimeType: inline.mimeType });
           return {
-            data: inline.data,
-            mimeType: inline.mimeType || 'audio/wav',
+            data: playable.data,
+            mimeType: playable.mimeType,
             modelUsed: currentModel,
           };
         }
@@ -123,9 +124,13 @@ export async function synthesizeStyledSpeech(
             });
             const retryInline = retryResp.candidates?.[0]?.content?.parts?.[0]?.inlineData;
             if (retryInline?.data) {
-              return {
+              const playable = ensurePlayableWav({
                 data: retryInline.data,
-                mimeType: retryInline.mimeType || 'audio/wav',
+                mimeType: retryInline.mimeType,
+              });
+              return {
+                data: playable.data,
+                mimeType: playable.mimeType,
                 modelUsed: currentModel,
               };
             }

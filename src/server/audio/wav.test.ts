@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { concatenateWavBase64Segments, extractWavMelPhonemeAlignment } from './wav';
+import {
+  concatenateWavBase64Segments,
+  ensurePlayableWav,
+  extractWavMelPhonemeAlignment,
+} from './wav';
 
 function pcm16LeBase64(samples: Int16Array): string {
   const buf = Buffer.alloc(samples.length * 2);
@@ -34,5 +38,20 @@ describe('concatenateWavBase64Segments', () => {
     const again = concatenateWavBase64Segments([{ data: wav.audioBase64, mimeType: 'audio/wav' }]);
     expect(again.audioBase64).toBe(wav.audioBase64);
     expect(again.mimeType).toBe('audio/wav');
+  });
+});
+
+describe('ensurePlayableWav', () => {
+  it('turns one Gemini L16 reply into WAV before other routes return it', () => {
+    const samples = new Int16Array(4800);
+    samples.fill(1200);
+    const playable = ensurePlayableWav({
+      data: pcm16LeBase64(samples),
+      mimeType: 'audio/L16;codec=pcm;rate=24000',
+    });
+    expect(playable.mimeType).toBe('audio/wav');
+    const header = Buffer.from(playable.data, 'base64').subarray(0, 12).toString('ascii');
+    expect(header.startsWith('RIFF')).toBe(true);
+    expect(header.endsWith('WAVE')).toBe(true);
   });
 });

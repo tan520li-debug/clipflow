@@ -232,6 +232,20 @@ function wavFromPcm(parsed: {
   };
 }
 
+export function ensurePlayableWav(segment: {
+  data: string;
+  mimeType?: string;
+}): { data: string; mimeType: string } {
+  const wrapped = concatenateWavBase64Segments([
+    { data: segment.data, mimeType: segment.mimeType?.trim() || 'audio/wav' },
+  ]);
+  const playable = getWavDurationSec(wrapped.audioBase64) !== null;
+  return {
+    data: wrapped.audioBase64,
+    mimeType: playable ? 'audio/wav' : wrapped.mimeType || 'audio/wav',
+  };
+}
+
 export function concatenateWavBase64Segments(
   segments: Array<{ data: string; mimeType: string }>,
   pauseMs = 120
