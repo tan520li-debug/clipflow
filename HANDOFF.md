@@ -2,6 +2,10 @@
 
 写于 2026-11-17 13:41（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。13:12 读到的 `HEAD` 是 `d957e6f`，相对 `origin/main` 当时是下面三笔，没有推送，也没有合进 `main`。13:41 把当时未提交的那批按文件名提交进本分支，提交是 `db1996e`，仍不推送、不合进 `main`。16:24 再读 `git log origin/main..HEAD` 和 `git status --short`，`HEAD` 仍是 `db1996e`，工作区只剩未跟踪的 `cursor-studio-followup.patch`。不要把 `data/`、`.env` 或 `cursor-studio-followup.patch` 提交进去。推送和合进 `main` 等另一个 agent 审过。
 
+## 给豆包的只读审计（2026-11-17 17:28）
+
+17:28 在仓库根目录读了 `git rev-parse HEAD`、`git rev-parse origin/main` 和 `git log origin/main..HEAD`。`HEAD` 是 `f58354f`，`origin/main` 是 `83622e6`。没有推送，没有合进 `main`。反重力审过的是当时 `HEAD` 还是 `d957e6f` 的那棵树。`db1996e` 到 `f58354f` 这 11 笔还没人审。派单在 `docs/派单-20261117-Cursor-给豆包-只读审计.md`，同样一份在 `D:\Doubao\clipflow-audit-20261117\`。豆包只读这个仓库，回执写到豆包自己的目录，不要改这里的文件、`.env`、`data/` 或那份过时补丁。
+
 ## 当前状态（2026-11-17 13:41）
 
 13:12 时已在分支上、相对 `origin/main` 的三笔：
