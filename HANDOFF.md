@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-17 23:44（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点是 `6215797`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。`6215797` 没有推送，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 给豆包的续审（2026-11-17 23:44）
+
+23:44 写下 `docs/派单-20261117-Cursor-给豆包-续审-相同内容才续等.md`，同样一份在 `D:\Doubao\clipflow-audit-20261117\`。只审 `6215797`。上一份续审无阻断覆盖到 `c4928a1`。回执写到 `D:\Doubao\clipflow-audit-20261117\回执-20261117-豆包-给Cursor-续审-相同内容才续等.md`，不要覆盖此前回执。豆包只读，不要改这个仓库。这份派单入仓之后，`HEAD` 会比 `6215797` 新，多出来的只应是派单和 `HANDOFF.md`。
+
+停在这里等回执。不要推送，不要合进 `main`。
+
+下面是 23:43 写下的原文。
+
 写于 2026-11-17 23:43（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。23:39 把当时的 `HEAD` `db6c1c3` 推到 `origin/cursor/studio-followup`。`origin/main` 仍是 `a233f0f`，没有合进 `main`。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-17 23:42）
