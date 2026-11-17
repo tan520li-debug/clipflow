@@ -2,11 +2,11 @@ import crypto from 'crypto';
 import express from 'express';
 import { createWriteStream, type WriteStream } from 'fs';
 import fs from 'fs/promises';
-import os from 'os';
 import path from 'path';
-import { binaryPathFor, createJob } from '../jobs/store.ts';
-import { startJob } from '../jobs/runner.ts';
+import { binaryPathFor } from '../jobs/store.ts';
+import { admitJob, QUEUE_FULL_MESSAGE, startJob } from '../jobs/runner.ts';
 import { transcodeVideoFileToH264Mp4 } from '../media/transcode.ts';
+import { ensureStudioTmpDir } from '../media/workDir.ts';
 
 const MAX_VIDEO_BYTES = 160 * 1024 * 1024;
 
@@ -115,7 +115,7 @@ export function registerExportRoutes(app: express.Express) {
       typeof req.query.sourceExt === 'string' ? req.query.sourceExt.trim() : 'webm';
     const safeExt = safeSourceExt(rawSourceExt);
     const uploadId = crypto.randomUUID();
-    const inPath = path.join(os.tmpdir(), `clipflow-in-${uploadId}.${safeExt}`);
+    const inPath = path.join(await ensureStudioTmpDir(), `clipflow-in-${uploadId}.${safeExt}`);
     let handedOff = false;
 
     try {
@@ -131,7 +131,12 @@ export function registerExportRoutes(app: express.Express) {
         return;
       }
 
-      const { id } = await createJob('export/transcode-mp4');
+      const admitted = await admitJob('export/transcode-mp4');
+      if ('full' in admitted) {
+        res.status(503).json({ error: QUEUE_FULL_MESSAGE });
+        return;
+      }
+      const id = admitted.id;
       const binPath = binaryPathFor(id);
       handedOff = true;
       res.status(202).json({ jobId: id, status: 'queued' });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import type express from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiAuthMiddleware } from './auth';
-import { apiRateLimitMiddleware, resetRateLimitForTests } from './rateLimit';
+import { apiRateLimitMiddleware, flushRateLimitWrites, resetRateLimitForTests } from './rateLimit';
 
 function createResponse() {
   return {
@@ -104,7 +104,7 @@ describe('apiRateLimitMiddleware', () => {
     expect(blocked).toBe(true);
   });
 
-  it('returns 429 on the next request after the cache is cleared', () => {
+  it('returns 429 on the next request after the cache is cleared', async () => {
     const req = {
       path: '/auto-edit',
       headers: {},
@@ -120,6 +120,7 @@ describe('apiRateLimitMiddleware', () => {
       expect(continued).toBe(true);
     }
 
+    await flushRateLimitWrites();
     resetRateLimitForTests();
 
     const res = createResponse();
@@ -129,5 +130,25 @@ describe('apiRateLimitMiddleware', () => {
     });
     expect(continued).toBe(false);
     expect(res.statusCode).toBe(429);
+  });
+
+  it('limits talking-video requests to three per minute', () => {
+    const req = {
+      path: '/digital-human/talking-video',
+      headers: {},
+      ip: '203.0.113.70',
+      socket: {},
+    } as express.Request;
+    let blocked = false;
+    for (let i = 0; i < 4; i += 1) {
+      const res = createResponse();
+      let continued = false;
+      apiRateLimitMiddleware(req, res as unknown as express.Response, () => {
+        continued = true;
+      });
+      if (i < 3) expect(continued).toBe(true);
+      else blocked = res.statusCode === 429 && continued === false;
+    }
+    expect(blocked).toBe(true);
   });
 });

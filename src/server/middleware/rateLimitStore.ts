@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -61,21 +62,36 @@ function serializeBuckets(buckets: Map<string, number[]>): string {
   return JSON.stringify(body);
 }
 
-function commitTempFile(tmp: string, target: string): void {
+async function commitTempFile(tmp: string, target: string): Promise<void> {
   const retryable = new Set(['EEXIST', 'EPERM', 'EBUSY']);
   let lastError: unknown = new Error('Failed to replace the rate limit file.');
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      renameSync(tmp, target);
+      await fs.rename(tmp, target);
       return;
     } catch (error) {
       lastError = error;
       const code = (error as NodeJS.ErrnoException).code;
       if (!code || !retryable.has(code)) throw error;
-      rmSync(target, { force: true });
+      await fs.rm(target, { force: true });
     }
   }
   throw lastError;
+}
+
+let writeChain: Promise<void> = Promise.resolve();
+
+async function writeSnapshot(filePath: string, body: string): Promise<void> {
+  const dir = path.dirname(filePath);
+  await fs.mkdir(dir, { recursive: true });
+  const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${crypto.randomUUID()}.tmp`);
+  try {
+    await fs.writeFile(tmp, body, 'utf8');
+    await commitTempFile(tmp, filePath);
+  } catch (error) {
+    await fs.rm(tmp, { force: true });
+    throw error;
+  }
 }
 
 /** Clears the in-memory snapshot so the next request reads the file again. Does not delete the file. */
@@ -93,16 +109,14 @@ export function loadRateLimitBuckets(): Map<string, number[]> {
 
 export function persistRateLimitBuckets(buckets: Map<string, number[]>): void {
   const filePath = resolveRateLimitFilePath();
-  const dir = path.dirname(filePath);
-  mkdirSync(dir, { recursive: true });
-  const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${crypto.randomUUID()}.tmp`);
-  let committed = false;
-  try {
-    writeFileSync(tmp, serializeBuckets(buckets), 'utf8');
-    commitTempFile(tmp, filePath);
-    committed = true;
-  } finally {
-    if (!committed) rmSync(tmp, { force: true });
-  }
+  const body = serializeBuckets(buckets);
   cached = { filePath, buckets };
+  writeChain = writeChain.then(() => writeSnapshot(filePath, body)).catch((error: unknown) => {
+    console.error('[rate-limit] persist failed:', error instanceof Error ? error.message : error);
+  });
+}
+
+/** Resolves after the scheduled disk writes, so a restarted process sees the latest counts. */
+export function flushRateLimitWrites(): Promise<void> {
+  return writeChain;
 }

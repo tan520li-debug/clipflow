@@ -14,6 +14,7 @@ import { registerJobRoutes } from './routes/jobs.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerVoiceRoutes } from './routes/voice.ts';
 import { resolveListenPort } from './listenPort.ts';
+import { sweepStaleScratch } from './media/workDir.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -103,6 +104,9 @@ export async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`ClipFlow Studio server running on http://0.0.0.0:${PORT}`);
+  });
+  void sweepStaleScratch().catch((error: unknown) => {
+    console.error('[tmp] sweep failed:', error instanceof Error ? error.message : error);
   });
 }
 

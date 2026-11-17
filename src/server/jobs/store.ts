@@ -185,6 +185,7 @@ export async function completeJob(id: string, result: JobCompletion): Promise<vo
   await ensureRecovered();
   const current = await readRecord(id);
   if (!current) throw new Error('任务不存在或已过期。');
+  if (current.status === 'succeeded' || current.status === 'failed') return;
   if (result.resultKind !== 'json' && result.resultKind !== 'binary') {
     throw new Error('Invalid result kind.');
   }
@@ -207,6 +208,7 @@ export async function failJob(id: string, httpStatus: number, error: string): Pr
   await ensureRecovered();
   const current = await readRecord(id);
   if (!current) throw new Error('任务不存在或已过期。');
+  if (current.status === 'succeeded' || current.status === 'failed') return;
   await writeRecord({
     ...current,
     status: 'failed',

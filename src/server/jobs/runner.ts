@@ -19,8 +19,33 @@ export interface JobHttpResult {
   filename?: string;
 }
 
+const DEFAULT_JOB_DEADLINE_MS = 15 * 60 * 1000;
+const JOB_DEADLINE = 'JOB_DEADLINE';
+
 const queue: Array<() => Promise<void>> = [];
 let busy = false;
+
+function jobDeadlineMs(): number {
+  const raw = Number(process.env.CLIPFLOW_JOB_DEADLINE_MS);
+  if (Number.isFinite(raw) && raw >= 1) return raw;
+  return DEFAULT_JOB_DEADLINE_MS;
+}
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(JOB_DEADLINE)), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function pump(): void {
   if (busy) return;
@@ -38,7 +63,7 @@ function pump(): void {
 async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<void> {
   await markRunning(id);
   try {
-    const result = await work();
+    const result = await withDeadline(work(), jobDeadlineMs());
     if (result.resultKind === 'binary') {
       const target = binaryPathFor(id);
       if (result.binaryPath) {
@@ -66,6 +91,11 @@ async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<
     });
   } catch (err: unknown) {
     const detail = err instanceof Error ? err.message : String(err);
+    if (detail === JOB_DEADLINE) {
+      console.error(`[job ${id}] deadline`);
+      await failJob(id, 504, '任务超时，已停止等待。').catch(() => undefined);
+      return;
+    }
     console.error(`[job ${id}]`, detail);
     await failJob(id, 500, '任务执行失败，请稍后重试。').catch(() => undefined);
   }
@@ -74,6 +104,30 @@ async function execute(id: string, work: () => Promise<JobHttpResult>): Promise<
 export function startJob(id: string, work: () => Promise<JobHttpResult>): void {
   queue.push(() => execute(id, work));
   pump();
+}
+
+const DEFAULT_JOB_QUEUE_MAX = 8;
+
+export const QUEUE_FULL_MESSAGE = '正在处理的任务太多，请等当前任务结束后再试。';
+
+export function jobQueueLimit(): number {
+  const raw = Number(process.env.CLIPFLOW_JOB_QUEUE_MAX);
+  if (Number.isFinite(raw) && raw >= 1) return Math.floor(raw);
+  return DEFAULT_JOB_QUEUE_MAX;
+}
+
+export function jobQueueFull(): boolean {
+  return queue.length + (busy ? 1 : 0) >= jobQueueLimit();
+}
+
+export async function admitJob(kind: string): Promise<{ id: string } | { full: true }> {
+  if (jobQueueFull()) return { full: true };
+  const created = await createJob(kind);
+  if (jobQueueFull()) {
+    await failJob(created.id, 503, QUEUE_FULL_MESSAGE);
+    return { full: true };
+  }
+  return created;
 }
 
 export function enqueueWork(kind: string, work: () => Promise<JobHttpResult>): string {

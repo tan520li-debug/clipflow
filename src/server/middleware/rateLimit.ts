@@ -1,7 +1,7 @@
 import type express from 'express';
 import { loadRateLimitBuckets, persistRateLimitBuckets } from './rateLimitStore.ts';
 
-export { resetRateLimitForTests } from './rateLimitStore.ts';
+export { flushRateLimitWrites, resetRateLimitForTests } from './rateLimitStore.ts';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const STANDARD_RATE_LIMIT_PER_MIN = 20;
@@ -14,6 +14,8 @@ const STRICT_RATE_LIMIT_PATHS = new Set([
   '/digital-human/clone',
   '/digital-human/drive',
   '/digital-human/multilingual-dub',
+  '/digital-human/reply',
+  '/digital-human/talking-video',
 ]);
 
 function getNormalizedClientIp(req: express.Request): string {

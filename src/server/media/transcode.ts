@@ -1,8 +1,8 @@
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs/promises';
-import os from 'os';
 import path from 'path';
+import { ensureStudioTmpDir } from './workDir.ts';
 
 export async function transcodeVideoFileToH264Mp4(
   inputPath: string,
@@ -82,8 +82,9 @@ export async function transcodeVideoBufferToH264Mp4(
 ): Promise<Buffer> {
   const safeExt = /^[a-z0-9]{2,5}$/i.test(sourceExt) ? sourceExt.toLowerCase() : 'webm';
   const jobId = crypto.randomUUID();
-  const inPath = path.join(os.tmpdir(), `clipflow-in-${jobId}.${safeExt}`);
-  const outPath = path.join(os.tmpdir(), `clipflow-out-${jobId}.mp4`);
+  const scratch = await ensureStudioTmpDir();
+  const inPath = path.join(scratch, `clipflow-in-${jobId}.${safeExt}`);
+  const outPath = path.join(scratch, `clipflow-out-${jobId}.mp4`);
 
   await fs.writeFile(inPath, inputBuffer);
 

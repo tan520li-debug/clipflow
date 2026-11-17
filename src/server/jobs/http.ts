@@ -1,6 +1,5 @@
 import type { Request, RequestHandler, Response } from 'express';
-import { createJob } from './store.ts';
-import { startJob, type JobHttpResult } from './runner.ts';
+import { admitJob, QUEUE_FULL_MESSAGE, startJob, type JobHttpResult } from './runner.ts';
 
 interface CaptureState {
   statusCode: number;
@@ -57,14 +56,19 @@ export function acceptJsonJob(
       }
     }
 
-    let jobId: string;
+    let admitted: Awaited<ReturnType<typeof admitJob>>;
     try {
-      jobId = (await createJob(kind)).id;
+      admitted = await admitJob(kind);
     } catch (err: unknown) {
       console.error('[jobs] create failed:', err);
       res.status(500).json({ error: '任务没能开始，请稍后重试。' });
       return;
     }
+    if ('full' in admitted) {
+      res.status(503).json({ error: QUEUE_FULL_MESSAGE });
+      return;
+    }
+    const jobId = admitted.id;
 
     res.status(202).json({ jobId, status: 'queued' });
     const captured = captureResponse();

@@ -24,7 +24,7 @@ npm run dev
 
 如果本机要走代理，设置 `HTTPS_PROXY`（例如 `http://127.0.0.1:10809`）。服务启动时会让 Gemini 请求走这个代理。
 
-ffmpeg 不在 PATH 上时，设置 `FFMPEG_PATH` 为可执行文件的绝对路径。导出成片会转成 H.264 MP4。
+ffmpeg 不在 PATH 上时，设置 `FFMPEG_PATH` 为可执行文件的绝对路径。导出成片会转成 H.264 MP4。转码中间文件写在仓库的 `data/tmp`，可用 `CLIPFLOW_TMP_DIR` 改成别的绝对路径。
 
 ## 检查
 

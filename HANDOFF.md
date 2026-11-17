@@ -1,6 +1,52 @@
 # ClipFlow 交接
 
-写于 2026-11-17 00:30 左右，01:25 补过实测。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。已提交的改动在本地分支 `cursor/studio-followup`，提交 `d65437d`，没有推送，也没有合进 `main`。代理和转码的后续改动还在这份工作区里，没有再提交。不要把 `data/`、`.env` 提交进去。
+写于 2026-11-17 13:41（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。13:12 读到的 `HEAD` 是 `d957e6f`，相对 `origin/main` 当时是下面三笔，没有推送，也没有合进 `main`。13:41 把当时未提交的那批按文件名提交进本分支，仍不推送、不合进 `main`。不要把 `data/`、`.env` 或 `cursor-studio-followup.patch` 提交进去。推送和合进 `main` 等另一个 agent 审过。
+
+## 当前状态（2026-11-17 13:41）
+
+13:12 时已在分支上、相对 `origin/main` 的三笔：
+
+| 提交 | 说明 |
+|---|---|
+| `d65437d` | 长任务离开请求线程，大素材离开 `localStorage` |
+| `ba50083` | Gemini 走本机代理，转码产出真正的 MP4 |
+| `d957e6f` | 时间线刷新后还在；主播能回话；访问令牌可在页面填写；克隆失败不再显示完成 |
+
+13:41 的这一笔收进当时还没提交的改动。提交前，2026-11-17 13:09 在仓库根目录跑过 `npx vitest run src/server/jobs/runner.test.ts src/server/jobs/http.test.ts src/server/middleware/auth.test.ts`，3 个文件、10 个测试通过；同一条命令里的 `npx tsc --noEmit` 退出码 0。2026-11-17 13:39 在同一目录跑了完整的 `npm run check`，退出码 0：Biome 检查 15 个文件，Vitest 10 个文件、35 个测试通过。`npm run check` 里的 Biome 只覆盖 `biome.json` 列出的路径，没有扫 `src/server/jobs`、`src/server/media`、`src/server/routes`。
+
+这一笔里的文件：`.env.example`、`README.md`、`HANDOFF.md`、`src/server/app.ts`、`src/server/jobs/http.ts`、`src/server/jobs/runner.ts`、`src/server/jobs/runner.test.ts`、`src/server/jobs/store.ts`、`src/server/media/transcode.ts`、`src/server/media/workDir.ts`、`src/server/media/workDir.test.ts`、`src/server/middleware/auth.test.ts`、`src/server/middleware/rateLimit.ts`、`src/server/middleware/rateLimitStore.ts`、`src/server/routes/export.ts`、`src/server/routes/talkingVideo.ts`。`cursor-studio-followup.patch` 是给反重力审计用的旧补丁，相对当前工作区已经过时，留在工作区，没有提交。
+
+这一笔做了四件事：
+
+- 转码临时文件默认在仓库的 `data/tmp`（`studioTmpDir`）。只有绝对路径的 `CLIPFLOW_TMP_DIR` 才覆盖。启动时 `sweepStaleScratch` 删掉超过 24 小时的 `clipflow-in-*` / `clipflow-out-*`。不要按时间删 `data/media`，那些文件被浏览器 IndexedDB 里的引用指着。
+- 限流落盘改成异步 `writeFile` / `rename`。内存里的计数仍是同步更新。测试要先 `flushRateLimitWrites()`。
+- 单个任务默认最多等 15 分钟（`CLIPFLOW_JOB_DEADLINE_MS`，默认 900000）。超时标失败，HTTP 504，文案「任务超时，已停止等待。」已经是 `succeeded` 或 `failed` 的任务，迟到的完成不会再改状态。
+- 队列默认最多 8 个（含正在跑的那一个，`CLIPFLOW_JOB_QUEUE_MAX`）。满了返回 503，文案「正在处理的任务太多，请等当前任务结束后再试。」入口是 `admitJob`：`acceptJsonJob`、成片转码、说话视频都走它。`enqueueWork` 没有调用方，也没有套这个上限。主播回答和说话视频进了每分钟 3 次的严格限流。
+
+开发服务：2026-11-17 13:10 重新执行 `npm run dev`，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。页面地址是 `http://127.0.0.1:3000`。这之前停掉的旧进程退出码 1，是被结束的，不是启动失败。同一时间只留这一个进程听 3000。
+
+## 反重力审计之后怎么处理的
+
+审计对象是 `cursor/studio-followup` 相对 `origin/main` 的补丁，当时 `HEAD` 还是 `d957e6f`。模型 ID 那条不采纳：`gemini-2.5-flash` 对新密钥是 404，并提示改用 `gemini-3.8-flash`；`gemini-3.1-flash-lite` 和 `gemini-3.8-flash` 能被接口认出，503 是繁忙。不要改 `src/server/gemini.ts` 里的模型列表。
+
+采纳并已写进 13:41 这一笔的：临时目录离开系统盘、限流异步落盘、卡住的单槽任务有截止时间、队列有上限。`data/media` 不做按时间清理。
+
+## 产品上已经接到、但不要夸大的
+
+- 访问令牌在顶栏填写，键是 `localStorage` 的 `clipflow_admin_token`，对应 `.env` 的 `ADMIN_ACCESS_TOKEN`。没有账号系统。
+- 克隆失败时页面用红色文案，不会再写「克隆完成」。音色仍是 Kore / Zephyr / Puck / Charon / Fenrir 里的预置匹配，不是本机声纹模型。
+- 时间线、简报、风格、平台写在 IndexedDB `clipflow` / `records`，键 `clipflow_studio_session_v1`。2026-11-17 上午在页面上改过简报「刷新保留验证：早八冰拿铁要还在」，刷新后还在。
+- 口型是画布上的嘴形色块（`drawDigitalHumanFacialMuscleRig`），不是神经口型模型。本机 `D:\w2l-work` 只有 ffmpeg，没有 MuseTalk / CosyVoice。
+- 「让主播回答」走 `POST /api/digital-human/reply`，空话当场 400。上午点过「几克豆子？」：第一次两个文本模型都是 503，页面显示「对话服务正忙，请稍后重试。」第二次请求挂住，后来给文本调用加了 20 秒 `AbortSignal.timeout`。配音和转写没有在那次点击里产出音频。
+- 说话视频按钮已接上 `POST /api/digital-human/talking-video`（Veo，会花钱）。空台词验证过，返回 400「请先写一句要让主播说的话。」没有发过真实生成。
+
+## 下一班
+
+13:41 那一笔已经在本地 `cursor/studio-followup`。不要重复提交。推送和合进 `main` 等另一个 agent 审过。工作区里剩下的 `cursor-studio-followup.patch` 仍然不要加进去。
+
+不要开做，除非点名：账号、收费、口型模型、实时对讲。口型仍是画布色块，本机没有 MuseTalk / CosyVoice。服务端工程库同样先不动。不要为了验证去点真正的 Veo 生成。Gemini 不忙时可以再试一次「让主播回答」。两个班不要同时改 `src/server/app.ts` 和 `src/client/api/http.ts`。
+
+下面是 2026-11-17 凌晨的记录。其中「下一班先做」的五项，以及后来的代理、MP4、时间线、回话，都已经进了上面三笔提交。临时目录、单槽卡住、队列无上限这几条，以本节为准，不要按旧文再做一遍。
 
 2026-11-17 01:20 左右实测：本机有 `HTTPS_PROXY`（`127.0.0.1:10809`）。Gemini 官方 SDK 不走这个代理，直连会超时。`getGeminiClient` 在有代理时用 `undici` 的 `ProxyAgent`。`gemini-2.5-flash` 对新用户返回 404，默认文本模型改为 `gemini-3.1-flash-lite`，忙的时候再试 `gemini-3.8-flash`。页面上点过「AI 生成多平台成片」，预览标题改成了「3分钟早八续命神器：极简冰燕麦拿铁」。转码结果文件名是 `.bin`，ffmpeg 认不出封装；已改成显式 `-f mp4`。本机 ffmpeg 用 `.env` 的 `FFMPEG_PATH`（`D:/w2l-work/bin/ffmpeg.exe`）。720p 导出页面显示「已通过服务端 FFmpeg 转码为高兼容 H.264 MP4」，下载是 1.4 MB 的 `.mp4`。
 

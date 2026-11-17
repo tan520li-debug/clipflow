@@ -1,7 +1,6 @@
 import type { GenerateVideosOperation, Video } from '@google/genai';
 import express from 'express';
-import { createJob } from '../jobs/store.ts';
-import { startJob, type JobHttpResult } from '../jobs/runner.ts';
+import { admitJob, QUEUE_FULL_MESSAGE, startJob, type JobHttpResult } from '../jobs/runner.ts';
 import {
   fetchWithEnvProxy,
   getGeminiClient,
@@ -155,14 +154,19 @@ export function registerTalkingVideoRoute(app: express.Express): void {
       res.status(400).json({ error: '请先写一句要让主播说的话。' });
       return;
     }
-    let jobId: string;
+    let admitted: Awaited<ReturnType<typeof admitJob>>;
     try {
-      jobId = (await createJob('digital-human/talking-video')).id;
+      admitted = await admitJob('digital-human/talking-video');
     } catch (err: unknown) {
       console.error('[talking-video] create failed:', err);
       res.status(500).json({ error: '说话视频任务没能开始，请稍后重试。' });
       return;
     }
+    if ('full' in admitted) {
+      res.status(503).json({ error: QUEUE_FULL_MESSAGE });
+      return;
+    }
+    const jobId = admitted.id;
     res.status(202).json({ jobId, status: 'queued' });
     const body = req.body;
     startJob(jobId, () => generateTalkingVideo(body));
