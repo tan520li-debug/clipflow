@@ -10,6 +10,16 @@ const ttsModelQuotaCooldownUntil = new Map<string, number>();
 
 export const SPEECH_SYNTHESIS_TIMEOUT_MS = 60_000;
 
+export const SPEECH_TIMEOUT_MESSAGE = '语音合成超时，请缩短台词后再试。';
+
+export function isSpeechTimeoutError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = 'name' in err ? String((err as { name?: unknown }).name ?? '') : '';
+  if (name === 'TimeoutError') return true;
+  const message = err instanceof Error ? err.message : '';
+  return /operation was aborted/i.test(message) && /timeout/i.test(message);
+}
+
 export async function synthesizeStyledSpeech(
   ai: GoogleGenAI,
   opts: {

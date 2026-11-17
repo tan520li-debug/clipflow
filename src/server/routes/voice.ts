@@ -7,7 +7,7 @@ import {
   isQuotaExceededError,
   isServiceBusyError,
 } from '../gemini.ts';
-import { synthesizeStyledSpeech } from '../audio/synthesize.ts';
+import { isSpeechTimeoutError, SPEECH_TIMEOUT_MESSAGE, synthesizeStyledSpeech } from '../audio/synthesize.ts';
 import { getWavDurationSec } from '../audio/wav.ts';
 import { acceptJsonJob } from '../jobs/http.ts';
 
@@ -165,6 +165,9 @@ app.post('/api/generate-voiceover', acceptJsonJob('generate-voiceover', async (r
       return res.status(503).json({
         error: 'AI 语音合成服务当前高峰拥挤，请几秒后重试，或使用「麦克风录自己声音」完成配音。',
       });
+    }
+    if (isSpeechTimeoutError(err)) {
+      return res.status(504).json({ error: SPEECH_TIMEOUT_MESSAGE });
     }
     return res.status(500).json({ error: 'AI 配音合成失败，请稍后重试。' });
   }
@@ -335,6 +338,9 @@ Return structured voice modeling parameters so we can faithfully reproduce this 
         error: 'AI 语音合成调用额度已达当前上限，请稍后再试或稍后重新生成试听样音。',
       });
     }
+    if (isSpeechTimeoutError(err)) {
+      return res.status(504).json({ error: SPEECH_TIMEOUT_MESSAGE });
+    }
     return res.status(500).json({ error: 'AI 声音克隆建模失败，请稍后重试。' });
   }
 }, (req) => {
@@ -395,6 +401,9 @@ app.post('/api/voice-clone/preview', acceptJsonJob('voice-clone/preview', async 
       return res.status(503).json({
         error: 'AI 语音服务当前高峰拥挤，请几秒后重试，或先使用「试听 EQ 音效」本地预览。',
       });
+    }
+    if (isSpeechTimeoutError(err)) {
+      return res.status(504).json({ error: SPEECH_TIMEOUT_MESSAGE });
     }
     return res.status(500).json({ error: '试听音频生成失败，请稍后重试。' });
   }

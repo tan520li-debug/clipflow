@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { GoogleGenAI } from '@google/genai';
 import { describe, expect, it } from 'vitest';
-import { synthesizeStyledSpeech, SPEECH_SYNTHESIS_TIMEOUT_MS } from './synthesize';
+import { isSpeechTimeoutError, SPEECH_SYNTHESIS_TIMEOUT_MS, SPEECH_TIMEOUT_MESSAGE, synthesizeStyledSpeech } from './synthesize';
 import { extractWavMelPhonemeAlignment, getWavDurationSec } from './wav';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -103,5 +103,13 @@ describe('synthesizeStyledSpeech', () => {
       })
     ).rejects.toThrow(/aborted|timeout/i);
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('names a speech timeout and leaves other failures alone', () => {
+    const timeout = new Error('The operation was aborted due to timeout');
+    timeout.name = 'TimeoutError';
+    expect(isSpeechTimeoutError(timeout)).toBe(true);
+    expect(SPEECH_TIMEOUT_MESSAGE).toBe('语音合成超时，请缩短台词后再试。');
+    expect(isSpeechTimeoutError(new Error('socket hang up'))).toBe(false);
   });
 });

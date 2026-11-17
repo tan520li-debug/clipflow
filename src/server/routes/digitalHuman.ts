@@ -4,7 +4,7 @@ import {
   estimateSpeechDurationSec,
   splitSpeechScriptIntoSegments,
 } from '../../domain/speech/index.ts';
-import { synthesizeStyledSpeech } from '../audio/synthesize.ts';
+import { isSpeechTimeoutError, SPEECH_TIMEOUT_MESSAGE, synthesizeStyledSpeech } from '../audio/synthesize.ts';
 import {
   concatenateWavBase64Segments,
   extractWavMelPhonemeAlignment,
@@ -280,6 +280,9 @@ app.post('/api/digital-human/drive', acceptJsonJob('digital-human/drive', async 
       return res.status(503).json({
         error: 'AI 语音合成服务高峰拥挤，请稍后重试或使用麦克风直录驱动。',
       });
+    }
+    if (isSpeechTimeoutError(err)) {
+      return res.status(504).json({ error: SPEECH_TIMEOUT_MESSAGE });
     }
     return res.status(500).json({ error: '数字人语音驱动合成失败，请稍后重试。' });
   }
@@ -947,6 +950,9 @@ ${cleanAudio ? '- 已附带原主播真实人声参考音频，请仔细听辨�
       return res.status(503).json({
         error: 'AI 翻译或语音合成服务高峰拥挤，请稍后重试。',
       });
+    }
+    if (isSpeechTimeoutError(err)) {
+      return res.status(504).json({ error: SPEECH_TIMEOUT_MESSAGE });
     }
     return res.status(500).json({ error: '多语言语音合成失败，请稍后重试。' });
   }
