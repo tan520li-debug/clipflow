@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:39（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码终点仍是 `dd46cb6`。上一笔交接是 `426180e`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区只剩未跟踪的 `cursor-studio-followup.patch`，不要提交，也不要删。
+
+## 本班（2026-11-18 10:39）
+
+在页面上改了一次片段时长，字幕跟着走。用的是 TikTok 那条，不是抖音。改之前先把整段工程复制到 IndexedDB 的临时键 `clipflow_studio_session_v1__duration_probe_backup`。
+
+TikTok 第一条从 2.0 秒改成 1.5 秒。改之前字幕是 0.1 秒起、时长 1.8；2.0 秒起、时长 1.9；4.0 秒起、时长 2.3；6.4 秒起、时长 2.3。改完后 IndexedDB 里是 0.1 秒起、时长 1.4；1.5 秒起、时长 1.9；3.5 秒起、时长 2.3；5.9 秒起、时长 2.3。画面上第二条字幕的左边距是 117 像素，也就是 1.5 秒乘 78。录制下拉里第二、三、四句显示 1.5 秒、3.5 秒、5.9 秒。第一条字幕伸出新结尾的那截被剪掉了。
+
+然后把临时键写回正式工程并删掉那 1 条临时记录。刷新后页面先闪过默认简报，随即回到「刷新保留验证：早八冰拿铁要还在」。TikTok 第一条回到 2.0 秒硬切。抖音镜头仍是 3.98、4.82、11.54、3.15 秒，字幕起点仍是 0.1、4.04、8.86、20.4 秒。没有点主播回答、配音、导出或说话视频。
+
+下面是 10:31 写下的原文。
+
 写于 2026-11-18 10:31（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。10:31 在仓库根目录读了 `git status --short --branch`、`git rev-parse --short HEAD`、`git rev-parse --short origin/cursor/studio-followup`、`git rev-parse --short origin/main` 和 `git log --oneline origin/cursor/studio-followup..HEAD`。功能代码终点是 `dd46cb6`。这一笔只补交接。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。功能代码比已推送的分支多 16 笔。本复盘提交之后，分支上会再多这一笔交接。没有推送，没有合进 `main`。不在这里等豆包。工作区只剩未跟踪的 `cursor-studio-followup.patch`，不要提交，也不要删。
 
 ## 复盘
