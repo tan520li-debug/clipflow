@@ -14,6 +14,7 @@ import {
   Volume2,
   Wand2,
 } from 'lucide-react';
+import { formatEditSeconds } from '../../client/timeline/editSeconds';
 import type {
   AudioConfig,
   BgmPreset,
@@ -839,7 +840,7 @@ export function SubtitleVoiceSection({
             </span>
             {selectedClip && (
               <span className="text-[11px] font-mono-nums text-zinc-500">
-                {selectedClip.duration.toFixed(1)}s
+                {formatEditSeconds(selectedClip.duration)}s
               </span>
             )}
           </div>
@@ -847,7 +848,7 @@ export function SubtitleVoiceSection({
           {selectedClip ? (
             <>
               <p className="text-[11px] text-zinc-400 leading-relaxed">
-                识别片段「{selectedClip.label}」的语音内容，并自动切分为与 {selectedClip.duration.toFixed(1)}s 时长对齐的字幕段。
+                识别片段「{selectedClip.label}」的语音内容，并自动切分为与 {formatEditSeconds(selectedClip.duration)}s 时长对齐的字幕段。
               </p>
 
               <input
@@ -1519,7 +1520,7 @@ export function SubtitleVoiceSection({
               >
                 {subtitles.map((s, idx) => (
                   <option key={s.id} value={s.id}>
-                    第 {idx + 1} 句 ({s.startTime.toFixed(1)}s) · {s.text.slice(0, 16)}
+                    第 {idx + 1} 句 ({formatEditSeconds(s.startTime)}s) · {s.text.slice(0, 16)}
                   </option>
                 ))}
                 <option value="__playhead__">
@@ -1796,7 +1797,7 @@ export function SubtitleVoiceSection({
                           className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-emerald-300 transition-colors"
                         >
                           <span className="font-mono-nums text-emerald-400 shrink-0">
-                            {cue.startTime.toFixed(1)}s
+                            {formatEditSeconds(cue.startTime)}s
                           </span>
                           <span
                             className={`text-[10px] shrink-0 ${

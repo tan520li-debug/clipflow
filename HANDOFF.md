@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:47（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔功能是 `2fdb990`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 10:47）
+
+时间线和字幕下拉把 1.88 秒收成 1.9、把 2.08 秒收成 2.1。整秒和整十分之一秒仍显示一位小数，带百分之一秒的才显示两位。播放头仍按 0.1 秒显示。
+
+10:47 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 23 个文件、102 个测试通过。1.88 显示成 1.88，2.08 显示成 2.08，2 和 2.4 仍是 2.0 和 2.4。10:47 打开 `http://127.0.0.1:3000/`，TikTok 四条镜头仍显示 2.0、2.0、2.4、2.4 秒，字幕下拉是 0.1、2.0、4.0、6.4 秒。简报仍是「刷新保留验证：早八冰拿铁要还在」，按钮停在「播放」。这条已保存时间线上没有 1.88 这种百分秒，页面上没有再造临时时间线。关掉了另一个开着同一地址的剪辑台标签页。没有点对齐、重剪、分割、复制、删除或导出。
+
+下面是 10:45 写下的原文。
+
 写于 2026-11-18 10:45（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。功能代码在这一笔之前的终点是 `dd46cb6`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 10:45）

@@ -8,6 +8,7 @@ import type {
   TimelineClip,
   VoiceoverCue,
 } from '../types/studio';
+import { formatEditSeconds } from '../client/timeline/editSeconds';
 import { formatTimecode, getTotalDuration } from '../utils/autoEditEngine';
 import {
   getDigitalHumanActionTemplate,
@@ -246,7 +247,7 @@ export function TimelineDock({
                         {idx + 1}. {clip.label}
                       </p>
                       <p className="text-[10px] font-mono-nums text-zinc-400 truncate">
-                        {clip.duration.toFixed(1)}s · {TRANSITION_LABELS[clip.transition]}
+                        {formatEditSeconds(clip.duration)}s · {TRANSITION_LABELS[clip.transition]}
                         {hasDhFull
                           ? ` · 数字人主播[${getDigitalHumanActionTemplate(clip.digitalHuman?.action).label}${
                               clip.digitalHuman?.emotionMatchEnabled !== false &&
