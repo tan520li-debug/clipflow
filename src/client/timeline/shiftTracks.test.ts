@@ -5,6 +5,7 @@ import {
   duplicateTimeSpan,
   followSubtitleTimes,
   cuesAfterSubtitleEdit,
+  sfxAfterSubtitleEdit,
   insertTimeSpan,
   moveTimeSpan,
   remapPointsToDurations,
@@ -151,5 +152,26 @@ describe('shiftTracks', () => {
       { id: 'cue', subtitleId: 's1', startTime: 3, duration: 1.2, text: '新台词' },
     ]);
     expect(cuesAfterSubtitleEdit(cues, 's1', null)).toEqual([]);
+  });
+
+  it('drops the subtitle sound on a deleted caption and moves it when the caption moves', () => {
+    const subtitles = [
+      { id: 's1', startTime: 4.04 },
+      { id: 's2', startTime: 8.86 },
+    ];
+    const events = [
+      { id: 'cut', time: 3.98, category: 'transition' },
+      { id: 'ding', time: 4.04, category: 'subtitle' },
+      { id: 'later', time: 8.86, category: 'subtitle' },
+    ];
+    expect(sfxAfterSubtitleEdit(events, subtitles, 's1', null)).toEqual([
+      { id: 'cut', time: 3.98, category: 'transition' },
+      { id: 'later', time: 8.86, category: 'subtitle' },
+    ]);
+    expect(sfxAfterSubtitleEdit(events, subtitles, 's1', { startTime: 5 })).toEqual([
+      { id: 'cut', time: 3.98, category: 'transition' },
+      { id: 'ding', time: 5, category: 'subtitle' },
+      { id: 'later', time: 8.86, category: 'subtitle' },
+    ]);
   });
 });

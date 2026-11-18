@@ -320,6 +320,36 @@ export function cuesAfterSubtitleEdit<T extends Ranged & { subtitleId?: string; 
           duration: round2(next.duration),
           ...(next.text !== undefined ? { text: next.text } : {}),
         }
-      : cue,
+        : cue,
+  );
+}
+
+const SUBTITLE_SFX_WINDOW_SEC = 0.2;
+
+/** A subtitle sound sits on the subtitle it is closer to, within a fifth of a second. */
+function subtitleSoundOwns(
+  time: number,
+  startTime: number,
+  others: readonly { startTime: number }[],
+): boolean {
+  const distance = Math.abs(time - startTime);
+  if (distance > SUBTITLE_SFX_WINDOW_SEC) return false;
+  return others.every((other) => Math.abs(time - other.startTime) >= distance);
+}
+
+/** Drop a subtitle sound when its caption is deleted, or move it when that caption moves. */
+export function sfxAfterSubtitleEdit<T extends { time: number; category: string }>(
+  events: readonly T[],
+  subtitles: readonly { id: string; startTime: number }[],
+  subtitleId: string,
+  next: { startTime: number } | null,
+): T[] {
+  const current = subtitles.find((subtitle) => subtitle.id === subtitleId);
+  if (!current) return [...events];
+  const others = subtitles.filter((subtitle) => subtitle.id !== subtitleId);
+  const owns = (time: number) => subtitleSoundOwns(time, current.startTime, others);
+  if (next === null) return events.filter((event) => event.category !== 'subtitle' || !owns(event.time));
+  return events.map((event) =>
+    event.category === 'subtitle' && owns(event.time) ? { ...event, time: round2(next.startTime) } : event,
   );
 }
