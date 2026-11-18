@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:57（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `869ba0b`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 10:57）
+
+音效推荐如果给的是旧秒数，转场声会停在镜头中间。现在转场声离切点超过 0.2 秒就贴到最近的镜头切点，字幕声贴到最近的字幕，太晚的钩子声回到 0.08 秒。已经贴在切点上的不动。
+
+10:56 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、105 个测试通过。2.15 秒的转场声落到 3.98 秒，7.45 秒的落到 8.8 秒。
+
+10:57 在抖音这条上点了「AI 音效库推荐并匹配节点」。推荐出来的时间是 0.08、0.1、3.93、8.75、8.86、20.34、20.4 秒，分别贴着开场、第一句字幕、3.98 秒的冲击切、8.8 秒的横甩切、8.86 秒的字幕、20.34 秒的叠化切和 20.4 秒的结尾字幕。没有点「一键自动插入全部推荐音效」，时间线上原来的八个音效还在。没有点配音、导出或说话视频。播放按钮仍是「播放」，播放头仍显示 4.7 秒。简报仍是「刷新保留验证：早八冰拿铁要还在」。
+
+下面是 10:51 写下的原文。
+
 写于 2026-11-18 10:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `9481039`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 10:51）

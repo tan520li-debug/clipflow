@@ -6,6 +6,7 @@ import {
   getTranscribeModelCandidates,
 } from '../gemini.ts';
 import { acceptJsonJob } from '../jobs/http.ts';
+import { placeSuggestedSfxTime } from '../../domain/timeline/placeSfx.ts';
 
 export function registerEditRoutes(app: express.Express) {
 app.post('/api/auto-edit', acceptJsonJob('auto-edit', async (req, res) => {
@@ -1047,9 +1048,24 @@ Rules:
           const safeCategory = validCategories.has(String(ev.category))
             ? String(ev.category)
             : 'transition';
-          const safeTime = Number(
-            Math.max(0, Math.min(safeTotal - 0.1, Number(ev.time) || 0)).toFixed(2)
-          );
+          const clipBounds = timelineNodes
+            .map((node: { startTime?: number; endTime?: number }) => ({
+              startTime: Number(node.startTime) || 0,
+              endTime: Number(node.endTime) || 0,
+            }))
+            .filter((node: { startTime: number; endTime: number }) => node.endTime > node.startTime);
+          const subtitleStarts = Array.isArray(subtitleNodes)
+            ? subtitleNodes.map((node: { startTime?: number }) => ({
+                startTime: Number(node.startTime) || 0,
+              }))
+            : [];
+          const safeTime = placeSuggestedSfxTime({
+            time: Number(ev.time) || 0,
+            category: safeCategory,
+            totalDuration: safeTotal,
+            clips: clipBounds,
+            subtitles: subtitleStarts,
+          });
           const safeVol = Number(
             Math.max(0.45, Math.min(0.95, Number(ev.volume) || 0.75)).toFixed(2)
           );

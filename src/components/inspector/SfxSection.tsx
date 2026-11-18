@@ -11,6 +11,7 @@ import type {
   TimelineClip,
 } from '../../types/studio';
 import { formatEditSeconds } from '../../client/timeline/editSeconds';
+import { placeSuggestedSfxTime } from '../../domain/timeline/placeSfx';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../../utils/canvasRenderer';
 import { apiFetch } from '../../client/api/http';
 
@@ -147,7 +148,19 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
         throw new Error(data?.error || 'AI 音效库推荐失败，请稍后重试。');
       }
 
-      const events = Array.isArray(data?.events) ? (data.events as SfxEvent[]) : [];
+      const events = (Array.isArray(data?.events) ? (data.events as SfxEvent[]) : []).map((event) => ({
+        ...event,
+        time: placeSuggestedSfxTime({
+          time: event.time,
+          category: event.category,
+          totalDuration: cursor,
+          clips: timelineNodes.map((node) => ({
+            startTime: node.startTime,
+            endTime: node.endTime,
+          })),
+          subtitles,
+        }),
+      }));
       if (events.length === 0) {
         throw new Error('未能分析出匹配的节点音效，请重试。');
       }
