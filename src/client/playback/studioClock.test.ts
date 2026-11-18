@@ -3,6 +3,7 @@ import {
   advanceStudioCursor,
   clipVideoSeekSec,
   digitalHumanSeekSec,
+  playheadTickChanged,
   shouldSeekMedia,
   shouldWhooshOnClipChange,
 } from './studioClock';
@@ -58,6 +59,12 @@ describe('advanceStudioCursor', () => {
     expect(step.cursorSec).toBe(10);
     expect(step.reachedEnd).toBe(true);
     expect(step.lastPerfMs).toBe(100);
+  });
+
+  it('publishes the playhead when the displayed tenth changes', () => {
+    expect(playheadTickChanged(1.04, 1.09)).toBe(false);
+    expect(playheadTickChanged(1.09, 1.1)).toBe(true);
+    expect(playheadTickChanged(9.96, 0)).toBe(true);
   });
 });
 

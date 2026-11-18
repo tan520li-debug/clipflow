@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:29（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 10:29）
+
+播放时每一帧都把播放头写进页面状态。时间码只显示到 0.1 秒，现在画面照常每帧画，页面状态只在 0.1 秒变一格时更新。暂停时把最后一帧的时间写回去。
+
+10:28 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 22 个文件、99 个测试通过。10:29 重新开了开发服务，打开 `http://127.0.0.1:3000/`，点「播放」变成「暂停」，再点回到「播放」，播放头停在 4.6 秒。没有点主播回答、配音、导出或说话视频。
+
+下面是 10:28 写下的原文。
+
 写于 2026-11-18 10:28（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 10:28）

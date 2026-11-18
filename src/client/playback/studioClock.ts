@@ -72,3 +72,9 @@ export function advanceStudioCursor(input: StudioCursorAdvanceInput): StudioCurs
   }
   return { cursorSec: advancedSec, lastPerfMs, reachedEnd: false };
 }
+
+/** The on-screen timecode only shows tenths, so the React playhead can follow that. */
+export function playheadTickChanged(previousSec: number, nextSec: number): boolean {
+  const tenth = (value: number) => Math.floor(Math.max(0, value) * 10);
+  return tenth(previousSec) !== tenth(nextSec);
+}

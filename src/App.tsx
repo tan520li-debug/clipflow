@@ -31,7 +31,7 @@ import {
   type LoadedMediaElement,
 } from './utils/canvasRenderer';
 import { primeVoiceEnvelopeCache } from './utils/digitalHumanAssets';
-import { advanceStudioCursor, clipVideoSeekSec, digitalHumanSeekSec, shouldSeekMedia, shouldWhooshOnClipChange } from './client/playback/studioClock';
+import { advanceStudioCursor, clipVideoSeekSec, digitalHumanSeekSec, playheadTickChanged, shouldSeekMedia, shouldWhooshOnClipChange } from './client/playback/studioClock';
 import {
   loadStudioLibrary,
   mergeHydratedAssets,
@@ -355,6 +355,7 @@ export default function App() {
     let rafId = 0;
     let lastPerfMs = performance.now();
     let localCursor = resumeAt;
+    let publishedSec = resumeAt;
 
     const tick = (now: number) => {
       const step = advanceStudioCursor({
@@ -388,7 +389,10 @@ export default function App() {
 
       audioEngineRef.current?.syncStep(localCursor);
       drawFrameAt(localCursor);
-      setCurrentTime(localCursor);
+      if (playheadTickChanged(publishedSec, localCursor)) {
+        publishedSec = localCursor;
+        setCurrentTime(localCursor);
+      }
 
       rafId = requestAnimationFrame(tick);
     };
@@ -397,6 +401,7 @@ export default function App() {
     return () => {
       cancelAnimationFrame(rafId);
       audioEngineRef.current?.stop();
+      setCurrentTime(localCursor);
     };
   }, [isPlaying, totalDuration, currentProject.clips, currentProject.sfxEvents, drawFrameAt]);
 
