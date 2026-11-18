@@ -3,6 +3,7 @@ import {
   duplicatePointSpan,
   duplicateTimeSpan,
   followSubtitleTimes,
+  insertTimeSpan,
   moveTimeSpan,
   remapPointsToDurations,
   remapRangesToDurations,
@@ -105,5 +106,20 @@ describe('shiftTracks', () => {
 
   it('scales a sound effect with the rebuilt timeline', () => {
     expect(scalePoints([{ id: 'hit', time: 4 }], 0.5)).toEqual([{ id: 'hit', time: 2 }]);
+  });
+
+  it('keeps only the left side of a subtitle that crosses an insert', () => {
+    const next = insertTimeSpan(
+      [
+        { id: 'cross', startTime: 1, duration: 3 },
+        { id: 'after', startTime: 5, duration: 1 },
+      ],
+      2,
+      2,
+    );
+    expect(next).toEqual([
+      { id: 'cross', startTime: 1, duration: 1 },
+      { id: 'after', startTime: 7, duration: 1 },
+    ]);
   });
 });

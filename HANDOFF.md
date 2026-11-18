@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:25（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 10:25）
+
+往时间线中间插入数字人镜头时，横跨插入点的字幕整段往后推，会和新建镜头叠在一起。现在横跨的字幕只留下插入点左边的那段，插入点之后的字幕、配音和音效才往后推。
+
+10:24 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 22 个文件、97 个测试通过。1 秒处、时长 3 秒的字幕，在 2 秒插入 2 秒后，变成从 1 秒起、时长 1 秒；后面的条目加 2 秒。没有在页面上点插入数字人。没有点主播回答、配音、导出或说话视频。
+
+下面是 10:19 写下的原文。
+
 写于 2026-11-18 10:19（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 10:19）

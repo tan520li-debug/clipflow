@@ -33,6 +33,8 @@ import {
   duplicatePointSpan,
   duplicateTimeSpan,
   followSubtitleTimes,
+  insertPointSpan,
+  insertTimeSpan,
   movePointSpan,
   moveTimeSpan,
   remapPointsToDurations,
@@ -1274,22 +1276,9 @@ export function useStudioCommands(input: StudioCommandInput) {
       const nextClips = [...prev.clips];
       nextClips.splice(insertIdx, 0, newClip);
 
-      // Shift all subtitles, voiceover cues, and SFX at or after insertedStartTime forward by duration
-      let nextSubtitles = prev.subtitles.map((s) =>
-        s.startTime >= insertedStartTime - 0.05
-          ? { ...s, startTime: Number((s.startTime + duration).toFixed(2)) }
-          : s
-      );
-      let nextCues = (prev.voiceoverCues ?? []).map((cue) =>
-        cue.startTime >= insertedStartTime - 0.05
-          ? { ...cue, startTime: Number((cue.startTime + duration).toFixed(2)) }
-          : cue
-      );
-      const nextSfx = (prev.sfxEvents ?? []).map((ev) =>
-        ev.time >= insertedStartTime - 0.05
-          ? { ...ev, time: Number((ev.time + duration).toFixed(2)) }
-          : ev
-      );
+      let nextSubtitles = insertTimeSpan(prev.subtitles, insertedStartTime, duration);
+      let nextCues = insertTimeSpan(prev.voiceoverCues ?? [], insertedStartTime, duration);
+      const nextSfx = insertPointSpan(prev.sfxEvents ?? [], insertedStartTime, duration);
 
       let nextAudio = prev.audio;
       if (drivenAudio && linkedCueId) {
