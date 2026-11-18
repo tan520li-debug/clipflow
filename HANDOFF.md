@@ -1,5 +1,13 @@
 # ClipFlow 交接
 
+写于 2026-11-18 14:46（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `934b1a8`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。不在这里等豆包。
+
+## 本班（2026-11-18 14:46）
+
+14:46 在已打开的 `http://127.0.0.1:3000/` 上切到英文版，镜头是 9.18、7.66、6.26、8.51 秒。再切回中文版，镜头仍是 3.98、4.82、11.54、3.15 秒，播放头 `00:05.0 / 00:23.4`，简报文本框仍是「刷新保留验证：早八冰拿铁要还在」。没有点「AI 生成中英文两版」，没有点配齐，没有点说话视频，没有导出英文版。
+
+下面是 14:42 写下的原文。
+
 写于 2026-11-18 14:42（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `df7471f`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。不在这里等豆包。
 
 ## 本班（2026-11-18 14:42）
