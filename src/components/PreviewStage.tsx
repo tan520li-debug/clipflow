@@ -12,7 +12,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import type { AspectRatio, PlatformId, PlatformProjectState } from '../types/studio';
-import { formatTimecode, getTotalDuration, PLATFORM_META, ALL_PLATFORM_IDS } from '../utils/autoEditEngine';
+import { editionLabel, EDITION_IDS, formatTimecode, getTotalDuration } from '../utils/autoEditEngine';
 import { computeTransitionBlurPx } from '../utils/canvasRenderer';
 
 interface PreviewStageProps {
@@ -68,7 +68,7 @@ export function PreviewStage({
       {/* Stage Top Toolbar */}
       <div className="px-5 py-2.5 border-b border-zinc-800/80 bg-[#0E1015]/80 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 p-1 bg-[#0B0D10] rounded-lg border border-zinc-800/90">
-          {ALL_PLATFORM_IDS.map((id) => {
+          {EDITION_IDS.map((id) => {
             const active = activePlatform === id;
             return (
               <button
@@ -81,7 +81,7 @@ export function PreviewStage({
                     : 'text-zinc-400 hover:text-zinc-100'
                 }`}
               >
-                {PLATFORM_META[id].shortLabel}
+                {editionLabel(id)}
               </button>
             );
           })}
@@ -151,7 +151,7 @@ export function PreviewStage({
               <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-[10px] text-white/75">
                 <div className="flex items-center justify-between border-b border-dashed border-white/25 pb-1.5">
                   <span className="font-mono-nums">
-                    {PLATFORM_META[activePlatform].shortLabel}安全顶栏
+                    安全顶栏
                   </span>
                   <span className="font-mono-nums">{project.aspectRatio}</span>
                 </div>
@@ -242,7 +242,7 @@ export function PreviewStage({
         <div className="hidden xl:flex flex-col w-[260px] shrink-0 border border-zinc-800/80 bg-[#11141B] rounded-xl p-4 space-y-3 self-center">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-zinc-200">
-              {PLATFORM_META[activePlatform].shortLabel}发布文案
+              {editionLabel(activePlatform)}发布文案
             </span>
             <button
               type="button"

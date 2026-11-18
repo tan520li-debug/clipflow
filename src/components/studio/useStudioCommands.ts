@@ -281,7 +281,7 @@ export function useStudioCommands(input: StudioCommandInput) {
         body: JSON.stringify({
           brief,
           style: editingStyle,
-          targetPlatforms,
+          targetPlatforms: targetPlatforms.filter((id) => id === 'douyin' || id === 'tiktok'),
           bpm,
           durationTarget: targetDuration,
           mediaSummary: assets.map((a, index) => ({

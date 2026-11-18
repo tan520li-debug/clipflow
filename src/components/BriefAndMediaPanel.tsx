@@ -321,14 +321,13 @@ export function BriefAndMediaPanel({
 
           <div className="border-t border-zinc-800/70 pt-4">
             <span className="block text-xs font-semibold text-zinc-200 mb-2">
-              目标发布平台
+              成片语言
             </span>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {(
                 [
-                  { id: 'douyin', label: '抖音' },
-                  { id: 'tiktok', label: 'TikTok' },
-                  { id: 'facebook', label: 'Facebook' },
+                  { id: 'douyin', label: '中文版' },
+                  { id: 'tiktok', label: '英文版' },
                 ] as const
               ).map((p) => {
                 const selected = targetPlatforms.includes(p.id);
@@ -419,7 +418,7 @@ export function BriefAndMediaPanel({
                 同步配齐 AI 声音（配音 + 配乐 + 音效）
               </span>
               <span className="block text-[10px] text-zinc-500 leading-snug mt-0.5">
-                剪辑完成后自动为当前平台生成自然口播配音、匹配 BGM 与节点音效并开启人声闪避
+                剪辑完成后自动为当前这一版生成自然口播配音、匹配 BGM 与节点音效并开启人声闪避
               </span>
             </span>
           </label>
@@ -434,12 +433,12 @@ export function BriefAndMediaPanel({
               {isGenerating ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>正在编排三端剪辑时间线...</span>
+                  <span>正在编排中英文两版...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>AI 生成多平台成片</span>
+                  <span>AI 生成中英文两版</span>
                 </>
               )}
             </button>

@@ -14,6 +14,7 @@ const PLATFORM_IDS: readonly PlatformId[] = [
   'instagram',
   'facebook',
 ];
+const EDITION_IDS: readonly PlatformId[] = ['douyin', 'tiktok'];
 const EDITING_STYLES: readonly EditingStyle[] = [
   'beat-sync',
   'talking-head',
@@ -64,13 +65,14 @@ export function normalizeStudioSession(raw: unknown): StudioSessionSnapshot | nu
   }
   if (Object.keys(projects).length === 0) return null;
 
-  const activePlatform = isPlatformId(session.activePlatform) ? session.activePlatform : 'douyin';
+  const savedPlatform = isPlatformId(session.activePlatform) ? session.activePlatform : 'douyin';
+  const activePlatform = EDITION_IDS.includes(savedPlatform) ? savedPlatform : 'douyin';
   const brief = typeof session.brief === 'string' ? session.brief.slice(0, 4000) : '';
   const editingStyle = EDITING_STYLES.includes(session.editingStyle as EditingStyle)
     ? (session.editingStyle as EditingStyle)
     : 'beat-sync';
   const targetPlatforms: PlatformId[] = Array.isArray(session.targetPlatforms)
-    ? session.targetPlatforms.filter(isPlatformId)
+    ? session.targetPlatforms.filter((id): id is PlatformId => EDITION_IDS.includes(id as PlatformId))
     : ['douyin'];
   const duration = Number(session.targetDuration);
   const bpm = Number(session.bpm);

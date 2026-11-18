@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-18 13:30（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `ec41389`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 13:30）
+
+剪辑台不再按五个平台各做一条。预览、成片语言、中英文成片页和导出都只留中文版、英文版。同一条成片可以发到抖音、小红书、TikTok、Instagram 或 Facebook。中文版仍是原来的抖音时间线，英文版仍是原来的 TikTok 时间线。小红书、Instagram、Facebook 的成片还在本地会话里，只是不再摆出来。
+
+打开时如果上次停在这三端之一，会回到中文版。生成请求也只带中文版和英文版，避免顺手重剪掉别的成片。
+
+13:26 页面连不上 `http://127.0.0.1:3000/`，本机 3000 端口没有进程在听。原来的开发服务已经不在。重新执行 `npm run dev` 之后，13:28 读 `http://127.0.0.1:3000/api/health`，状态码 200。
+
+13:30 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、113 个测试通过。页面刷新后简报仍是「刷新保留验证：早八冰拿铁要还在」。中文版镜头 3.98、4.82、11.54、3.15 秒，八条音效和四段配音还在。英文版镜头 9.18、7.66、6.26、8.51 秒，英文字幕还在。中英文成片页只有这两张卡。没有点生成，没有点导出。
+
+下面是 12:19 写下的原文。
+
 写于 2026-11-18 12:19（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `1bed616`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 12:19）

@@ -317,6 +317,15 @@ export function getPlatformLabel(pid: PlatformId, uiLang: UiLanguage, short = fa
   return short ? meta.shortLabelEn : meta.labelEn;
 }
 
+/** One Chinese cut and one English cut. The same file can be posted to any platform. */
+export const EDITION_IDS: readonly PlatformId[] = ['douyin', 'tiktok'];
+
+export function editionLabel(id: PlatformId): string {
+  if (id === 'douyin') return '中文版';
+  if (id === 'tiktok') return '英文版';
+  return getPlatformLabel(id, 'zh-CN', true);
+}
+
 export function createInitialPlatformProjects(): Record<PlatformId, PlatformProjectState> {
   return {
     douyin: {

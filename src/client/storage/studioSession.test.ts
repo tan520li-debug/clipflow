@@ -38,6 +38,35 @@ describe('normalizeStudioSession', () => {
     expect(normalizeStudioSession(null)).toBeNull();
   });
 
+  it('opens the Chinese cut when the saved platform is not Chinese or English', () => {
+    const session = normalizeStudioSession({
+      activePlatform: 'xiaohongshu',
+      targetPlatforms: ['douyin', 'facebook', 'xiaohongshu'],
+      projects: {
+        douyin: {
+          platform: 'douyin',
+          aspectRatio: '9:16',
+          clips: [{ id: 'zh', label: '中文' }],
+          subtitles: [],
+          copy: {},
+          audio: { bpm: 96, volume: 1, bgmPreset: 'none' },
+        },
+        xiaohongshu: {
+          platform: 'xiaohongshu',
+          aspectRatio: '9:16',
+          clips: [{ id: 'xhs', label: '仍保留' }],
+          subtitles: [],
+          copy: {},
+          audio: { bpm: 112, volume: 1, bgmPreset: 'none' },
+        },
+      },
+    });
+
+    expect(session?.activePlatform).toBe('douyin');
+    expect(session?.targetPlatforms).toEqual(['douyin']);
+    expect(session?.projects.xiaohongshu?.clips[0]?.label).toBe('仍保留');
+  });
+
   it('strips oversized voice payloads while keeping the cue text', () => {
     const session = normalizeStudioSession({
       projects: {

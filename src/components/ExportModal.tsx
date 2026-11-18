@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import type { AspectRatio, MediaAsset, PlatformId, PlatformProjectState } from '../types/studio';
-import { exportSrtSubtitles, formatTimecode, getTotalDuration, PLATFORM_META } from '../utils/autoEditEngine';
+import { editionLabel, exportSrtSubtitles, formatTimecode, getTotalDuration } from '../utils/autoEditEngine';
 import { StudioAudioEngine } from '../utils/audioEngine';
 import { findClipAtTime, renderTimelineFrame, type LoadedMediaElement } from '../utils/canvasRenderer';
 import { apiFetch } from '../client/api/http';
@@ -50,7 +50,7 @@ interface PlatformExportProfile {
 const PLATFORM_EXPORT_PROFILES: Record<PlatformId, PlatformExportProfile> = {
   douyin: {
     platform: 'douyin',
-    label: '抖音 Douyin',
+    label: '中文版',
     aspectRatio: '9:16',
     resolutionTier: '1080p',
     codec: 'vp9',
@@ -76,7 +76,7 @@ const PLATFORM_EXPORT_PROFILES: Record<PlatformId, PlatformExportProfile> = {
   },
   tiktok: {
     platform: 'tiktok',
-    label: 'TikTok',
+    label: '英文版',
     aspectRatio: '9:16',
     resolutionTier: '1080p',
     codec: 'vp9',
@@ -688,7 +688,7 @@ export function ExportModal({
           <div>
             <div className="flex items-center gap-2.5">
               <h2 id="export-modal-title" className="text-base font-bold text-zinc-100 font-display">
-                导出成片 · {PLATFORM_META[targetPlatform].label}
+                导出成片 · {editionLabel(targetPlatform)}
               </h2>
               {multiPlatformOptimize && (
                 <span className="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-[10px] font-semibold text-rose-300">
@@ -724,7 +724,7 @@ export function ExportModal({
             }`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-rose-400" />
-            <span>1. 多平台优化与编码配置</span>
+            <span>1. 画幅与编码</span>
           </button>
           <button
             type="button"
@@ -760,10 +760,10 @@ export function ExportModal({
                 <div className="space-y-0.5">
                   <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-rose-400" />
-                    <span>多平台导出优化</span>
+                    <span>按这一版套用推荐编码</span>
                   </div>
                   <p className="text-[11px] text-zinc-400">
-                    根据目标分发平台自动匹配推荐画幅、编码器、码率与分辨率档位
+                    中文版和英文版各用一套竖屏画幅、码率和分辨率。导出的文件可以发到多个平台。
                   </p>
                 </div>
                 <button
@@ -784,8 +784,8 @@ export function ExportModal({
               </div>
 
               {/* Platform Selection Cards */}
-              <div className="grid grid-cols-3 gap-2.5">
-                {(['douyin', 'tiktok', 'facebook'] as PlatformId[]).map((pid) => {
+              <div className="grid grid-cols-2 gap-2.5">
+                {(['douyin', 'tiktok'] as PlatformId[]).map((pid) => {
                   const prof = PLATFORM_EXPORT_PROFILES[pid];
                   const isSelected = targetPlatform === pid;
                   return (
