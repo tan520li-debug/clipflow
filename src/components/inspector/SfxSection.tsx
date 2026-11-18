@@ -84,23 +84,11 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
     () => ({
       clearError: () => setSfxError(null),
       applyPackaged: (suggestion) => {
-        const placed = placeSuggestedSfxEvents(suggestion.events, {
-          totalDuration: clips.reduce((sum, clip) => sum + clip.duration, 0),
-          clips: clips.reduce<{ startTime: number; endTime: number }[]>((bounds, clip) => {
-            const startTime = bounds.length === 0 ? 0 : bounds[bounds.length - 1].endTime;
-            bounds.push({
-              startTime: Number(startTime.toFixed(2)),
-              endTime: Number((startTime + clip.duration).toFixed(2)),
-            });
-            return bounds;
-          }, []),
-          subtitles,
-        });
-        setSfxSuggestion({ ...suggestion, events: placed });
+        setSfxSuggestion(suggestion);
         setSfxAppliedAll(true);
       },
     }),
-    [clips, subtitles],
+    [],
   );
 
   const handleAnalyzeSfx = async () => {

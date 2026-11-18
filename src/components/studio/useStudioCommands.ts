@@ -26,7 +26,7 @@ import type {
   VoiceoverVoice,
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
-import { placeSuggestedSfxEvents } from '../../domain/timeline/placeSfx';
+import { placeSuggestedSfxEvents, boundsForClips } from '../../domain/timeline/placeSfx';
 import { duplicateClip } from '../../client/timeline/duplicateClip';
 import { snapClipsToBeat } from '../../client/timeline/snapBeat';
 import {
@@ -755,12 +755,22 @@ export function useStudioCommands(input: StudioCommandInput) {
     audioEngineRef.current.previewSfx(type, volume);
   };
 
-  const handleSetSfxEvents = (events: SfxEvent[]) => {
-    const sorted = [...events].sort((a, b) => a.time - b.time);
-    updateCurrentProject((prev) => ({
-      ...prev,
-      sfxEvents: sorted,
-    }));
+  const handleSetSfxEvents = (events: SfxEvent[]): SfxEvent[] => {
+    let placed: SfxEvent[] = [];
+    updateCurrentProject((prev) => {
+      const clips = boundsForClips(prev.clips);
+      const totalDuration = clips.length > 0 ? clips[clips.length - 1].endTime : 0;
+      placed = placeSuggestedSfxEvents(events, {
+        totalDuration,
+        clips,
+        subtitles: prev.subtitles,
+      }).sort((a, b) => a.time - b.time);
+      return {
+        ...prev,
+        sfxEvents: placed,
+      };
+    });
+    return placed;
   };
 
   const handleAddSfxEvent = (event: SfxEvent) => {
@@ -781,8 +791,21 @@ export function useStudioCommands(input: StudioCommandInput) {
     }));
   };
 
-  const handleSetVoiceoverCues = (cues: VoiceoverCue[]) => {
-    updateCurrentProject((prev) => alignProjectTimelineToVoiceover(prev, cues));
+  const handleSetVoiceoverCues = (cues: VoiceoverCue[], sfxEvents?: SfxEvent[]): SfxEvent[] | undefined => {
+    let placed: SfxEvent[] | undefined;
+    updateCurrentProject((prev) => {
+      const aligned = alignProjectTimelineToVoiceover(prev, cues);
+      if (!sfxEvents) return aligned;
+      const clips = boundsForClips(aligned.clips);
+      const totalDuration = clips.length > 0 ? clips[clips.length - 1].endTime : 0;
+      placed = placeSuggestedSfxEvents(sfxEvents, {
+        totalDuration,
+        clips,
+        subtitles: aligned.subtitles,
+      }).sort((a, b) => a.time - b.time);
+      return { ...aligned, sfxEvents: placed };
+    });
+    return placed;
   };
 
   const handleUpsertVoiceoverCue = (cue: VoiceoverCue) => {

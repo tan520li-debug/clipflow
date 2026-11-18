@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 11:14（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `1f4301d`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 11:14）
+
+一键配齐时先按配音把镜头拉长，音效却按拉长前的切点写入。现在配音和音效同一次写入：先拉长镜头，再按拉长后的切点和字幕落音效。只换整表音效时，也按当时的镜头落点。
+
+11:13 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、107 个测试通过。3.98 秒加 4.82 秒的镜头边界是 0、3.98 和 8.8 秒。没有点配齐。11:14 页面简报仍是「刷新保留验证：早八冰拿铁要还在」。
+
+下面是 11:01 写下的原文。
+
 写于 2026-11-18 11:01（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `645a3e5`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 11:01）

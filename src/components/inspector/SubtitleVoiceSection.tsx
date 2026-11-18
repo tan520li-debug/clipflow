@@ -15,7 +15,6 @@ import {
   Wand2,
 } from 'lucide-react';
 import { formatEditSeconds } from '../../client/timeline/editSeconds';
-import { placeSuggestedSfxEvents } from '../../domain/timeline/placeSfx';
 import type {
   AudioConfig,
   BgmPreset,
@@ -90,12 +89,12 @@ interface SubtitleVoiceSectionProps {
   onUpdateAudio: (patch: Partial<AudioConfig>) => void;
   onUpdateClonedVoice: (profileId: string, patch: Partial<ClonedVoiceProfile>) => void;
   onDeleteClonedVoice: (profileId: string) => void;
-  onSetVoiceoverCues: (cues: VoiceoverCue[]) => void;
+  onSetVoiceoverCues: (cues: VoiceoverCue[], sfxEvents?: SfxEvent[]) => SfxEvent[] | undefined;
   onUpsertVoiceoverCue: (cue: VoiceoverCue) => void;
   onRemoveVoiceoverCue: (cueId: string) => void;
   onPreviewVoiceoverCue: (cue: VoiceoverCue) => void;
   onSeek: (timeSec: number) => void;
-  onSetSfxEvents: (events: SfxEvent[]) => void;
+  onSetSfxEvents: (events: SfxEvent[]) => SfxEvent[] | void;
   onOpenVoiceClone: () => void;
   bgmRef: RefObject<BgmCopyrightHandle | null>;
   sfxRef: RefObject<SfxSectionHandle | null>;
@@ -507,27 +506,36 @@ export function SubtitleVoiceSection({
 
       if (voResult.status === 'fulfilled' && voResult.value && Array.isArray(voResult.value.cues)) {
         const cues = voResult.value.cues as VoiceoverCue[];
-        onSetVoiceoverCues(cues);
+        const rawSfx =
+          sfxResult.status === 'fulfilled' && sfxResult.value && Array.isArray(sfxResult.value.events)
+            ? (sfxResult.value.events as SfxEvent[])
+            : undefined;
+        const placed = onSetVoiceoverCues(cues, rawSfx);
         completedParts.push(`${cues.length} 段真人感配音`);
+        if (placed && sfxResult.status === 'fulfilled' && sfxResult.value) {
+          sfxRef.current?.applyPackaged({
+            librarySummary: sfxResult.value.librarySummary || '已自动匹配转场与动作音效。',
+            events: placed,
+          });
+          completedParts.push(`${placed.length} 处节点音效`);
+        }
       } else if (voResult.status === 'rejected') {
         setVoiceoverError(voResult.reason instanceof Error ? voResult.reason.message : '配音生成失败');
       }
 
-      if (sfxResult.status === 'fulfilled' && sfxResult.value && Array.isArray(sfxResult.value.events)) {
-        const events = placeSuggestedSfxEvents(sfxResult.value.events as SfxEvent[], {
-          totalDuration: cursor,
-          clips: timelineNodes.map((node) => ({
-            startTime: node.startTime,
-            endTime: node.endTime,
-          })),
-          subtitles,
-        });
-        onSetSfxEvents(events);
+      if (
+        !(voResult.status === 'fulfilled' && voResult.value && Array.isArray(voResult.value.cues)) &&
+        sfxResult.status === 'fulfilled' &&
+        sfxResult.value &&
+        Array.isArray(sfxResult.value.events)
+      ) {
+        const events = sfxResult.value.events as SfxEvent[];
+        const placed = onSetSfxEvents(events) ?? events;
         sfxRef.current?.applyPackaged({
           librarySummary: sfxResult.value.librarySummary || '已自动匹配转场与动作音效。',
-          events,
+          events: placed,
         });
-        completedParts.push(`${events.length} 处节点音效`);
+        completedParts.push(`${placed.length} 处节点音效`);
       }
 
       if (completedParts.length > 0) {

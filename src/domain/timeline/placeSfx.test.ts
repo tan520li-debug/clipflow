@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeSuggestedSfxEvents, placeSuggestedSfxTime } from './placeSfx';
+import { boundsForClips, placeSuggestedSfxEvents, placeSuggestedSfxTime } from './placeSfx';
 
 const clips = [
   { startTime: 0, endTime: 3.98 },
@@ -69,5 +69,12 @@ describe('placeSuggestedSfxTime', () => {
       { totalDuration: 23.49, clips, subtitles },
     );
     expect(event).toEqual({ id: 'hit', time: 3.98, category: 'transition' });
+  });
+
+  it('builds clip bounds from durations', () => {
+    expect(boundsForClips([{ duration: 3.98 }, { duration: 4.82 }])).toEqual([
+      { startTime: 0, endTime: 3.98 },
+      { startTime: 3.98, endTime: 8.8 },
+    ]);
   });
 });

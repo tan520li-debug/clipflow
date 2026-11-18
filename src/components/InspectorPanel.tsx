@@ -81,10 +81,10 @@ interface InspectorPanelProps {
   onUpdateAudio: (patch: Partial<AudioConfig>) => void;
   onUploadAudio: (file: File) => void;
   onPreviewSfx: (type: SfxType, volume?: number) => void;
-  onSetSfxEvents: (events: SfxEvent[]) => void;
+  onSetSfxEvents: (events: SfxEvent[]) => SfxEvent[] | void;
   onAddSfxEvent: (event: SfxEvent) => void;
   onRemoveSfxEvent: (eventId: string) => void;
-  onSetVoiceoverCues: (cues: VoiceoverCue[]) => void;
+  onSetVoiceoverCues: (cues: VoiceoverCue[], sfxEvents?: SfxEvent[]) => SfxEvent[] | undefined;
   onUpsertVoiceoverCue: (cue: VoiceoverCue) => void;
   onRemoveVoiceoverCue: (cueId: string) => void;
   onPreviewVoiceoverCue: (cue: VoiceoverCue) => void;

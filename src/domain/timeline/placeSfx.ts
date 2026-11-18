@@ -34,6 +34,17 @@ export function placeSuggestedSfxTime(input: {
   return clamp(raw);
 }
 
+export function boundsForClips(clips: readonly { duration: number }[]): SfxClipBound[] {
+  const bounds: SfxClipBound[] = [];
+  let cursor = 0;
+  for (const clip of clips) {
+    const startTime = Number(cursor.toFixed(2));
+    cursor += clip.duration;
+    bounds.push({ startTime, endTime: Number(cursor.toFixed(2)) });
+  }
+  return bounds;
+}
+
 export function placeSuggestedSfxEvents<T extends { time: number; category: string }>(
   events: readonly T[],
   input: {
