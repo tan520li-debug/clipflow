@@ -1,5 +1,13 @@
 # ClipFlow 交接
 
+写于 2026-11-18 14:40（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `b475073`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。不在这里等豆包。
+
+## 本班（2026-11-18 14:40）
+
+用户说可以先给豆包审计，然后继续。14:40 写下 `docs/派单-20261118-Cursor-给豆包-未推送剪辑.md`，同样一份在 `D:\Doubao\clipflow-audit-20261118\`。审 `6215797` 到 `b475073`。`7cb7f34` 那张旧派单没有回执，这次范围盖过它，不另补。回执写到 `D:\Doubao\clipflow-audit-20261118\回执-20261118-豆包-给Cursor-未推送剪辑.md`。豆包只读，不要改这个仓库。这份派单入仓之后，`HEAD` 会比 `b475073` 新；再往后的功能不在这一单里。
+
+下面是 14:14 写下的原文。
+
 写于 2026-11-18 14:14（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。HEAD 是 `ee2aaf3`。从 `origin/cursor/studio-followup` 的 `db6c1c3` 算起，本地超前 33 笔。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区只剩未跟踪的 `cursor-studio-followup.patch`，不要提交，也不要删。14:14 读了 `http://127.0.0.1:3000/api/health`，状态码 200。开发服务是 13:46 拉起来的那一个，还在听 3000。
 
 ## 复盘（2026-11-18 14:14）
