@@ -50,6 +50,7 @@ import {
   removeTimeSpan,
   scalePoints,
 } from '../../client/timeline/shiftTracks';
+import { placeInsertedClip } from '../../client/timeline/insertClip';
 import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
 import { StudioAudioEngine } from '../../utils/audioEngine';
 import {
@@ -260,10 +261,29 @@ export function useStudioCommands(input: StudioCommandInput) {
       filter: 'cinematic',
       speed: 1,
     };
-    updateCurrentProject((prev) => ({
-      ...prev,
-      clips: [...prev.clips, newClip],
-    }));
+    updateCurrentProject((prev) => {
+      const placed = placeInsertedClip(prev.clips, newClip, currentTime);
+      const splitSubtitles = splitRangesAt(prev.subtitles, placed.at, (id) => `${id}-ins-${newClip.id}`);
+      const sfxAfterSplit =
+        prev.sfxEvents && placed.splitFromId && placed.secondId
+          ? assignPointsToSplitClip(prev.sfxEvents, placed.at, placed.splitFromId, placed.secondId)
+          : prev.sfxEvents;
+      return {
+        ...prev,
+        clips: placed.clips,
+        subtitles: insertTimeSpan(splitSubtitles, placed.at, newClip.duration),
+        voiceoverCues: prev.voiceoverCues
+          ? insertTimeSpan(
+              matchCuesToChangedRanges(prev.voiceoverCues, prev.subtitles, splitSubtitles),
+              placed.at,
+              newClip.duration,
+            )
+          : prev.voiceoverCues,
+        sfxEvents: sfxAfterSplit
+          ? insertPointSpan(sfxAfterSplit, placed.at, newClip.duration)
+          : sfxAfterSplit,
+      };
+    });
     setSelectedClipId(newClip.id);
     setSelectedSubtitleId(null);
   };

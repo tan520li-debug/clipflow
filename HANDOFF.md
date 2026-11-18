@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 13:52（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `a9a21ef`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 13:52）
+
+素材库插入不再接到时间线末尾。播放头离切点不到 0.45 秒时贴到那一刀；否则把下面那镜切开，新镜头放在两半中间。后面的字幕、配音和音效往后让开。跨在刀口上的字幕切开，配音只留在左半句。
+
+13:50 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 25 个文件、116 个测试通过。5 秒插进 3.98 秒和 4.82 秒两镜之间，得到 3.98、1.02、2.5、3.8 秒。
+
+页面上中文版播放头在 5.0 秒，点了「插入到播放头」。镜头变成 3.98、1.02、2.5、3.8、11.54、3.15 秒。4.04 秒那句跨过 5 秒，右半句落到 7.5 秒，配音还在 4.04 秒。8.8 秒之后的音效都加了 2.5 秒。核对完把会话从备份写回去并刷新。中文版镜头回到 3.98、4.82、11.54、3.15 秒，简报仍是「刷新保留验证：早八冰拿铁要还在」，播放头仍是 5 秒。
+
+下面是 13:47 写下的原文。
+
 写于 2026-11-18 13:47（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `58de874`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 13:47）

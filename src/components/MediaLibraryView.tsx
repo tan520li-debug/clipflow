@@ -13,7 +13,6 @@ import {
 import type { MediaAiTags, MediaAsset, PlatformId } from '../types/studio';
 import { formatEditSeconds } from '../client/timeline/editSeconds';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../utils/canvasRenderer';
-import { editionLabel } from '../utils/autoEditEngine';
 import { apiFetch } from '../client/api/http';
 
 interface MediaLibraryViewProps {
@@ -413,7 +412,7 @@ export function MediaLibraryView({
                       >
                         <Plus className="w-3 h-3" />
                         <span>
-                          插入{editionLabel(activePlatform)}
+                          插入播放头
                         </span>
                       </button>
                       {asset.source === 'upload' && (

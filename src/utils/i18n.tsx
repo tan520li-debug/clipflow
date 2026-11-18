@@ -210,7 +210,7 @@ export const ZH_CN_DICT = {
   'brief.beatSyncBtn': '一键节拍自动卡点重剪',
   'brief.uploadBtn': '导入本地视频或图片素材',
   'brief.uploadHint': '支持 MP4 / MOV / WebM / JPG / PNG',
-  'brief.insertTooltip': '添加到当前时间线',
+  'brief.insertTooltip': '插入到播放头',
   'media.type.video': '视频',
   'media.type.image': '图片',
 

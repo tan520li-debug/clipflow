@@ -517,7 +517,7 @@ export function BriefAndMediaPanel({
                 <button
                   type="button"
                   onClick={() => onInsertClipToTimeline(asset)}
-                  title="添加到当前时间线"
+                  title="插入到播放头"
                   className="p-2 rounded-md bg-zinc-800 hover:bg-rose-600 text-zinc-200 hover:text-white transition-colors shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
