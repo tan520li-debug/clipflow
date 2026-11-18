@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 11:49（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `804e9d6`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 11:49）
+
+识别并替换一镜里的字幕时，被换掉的句子还挂着配音和字幕音效。现在中点落在这镜里的旧字幕去掉，挂在这些句子上的配音去掉，贴在这些句子上的字幕音效去掉。转场音效留着。镜外的字幕和配音不动。
+
+11:49 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、110 个测试通过。0 到 3 秒这镜换字幕后，0.1 秒的字幕音效消失，同一时刻的转场声还在，4 秒那句的配音还在。没有在页面上点语音识别。
+
+下面是 11:48 写下的原文。
+
 写于 2026-11-18 11:48（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `de6137c`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 11:48）

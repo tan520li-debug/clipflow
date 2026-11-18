@@ -394,3 +394,34 @@ export function sfxAfterSubtitleEdit<T extends { time: number; category: string 
     event.category === 'subtitle' && owns(event.time) ? { ...event, time: round2(next.startTime) } : event,
   );
 }
+
+/** Replace captions whose midpoint sits in a clip, and drop the cue and subtitle sound that belonged to them. */
+export function replaceSubtitlesInWindow<
+  TSub extends { id: string; startTime: number; duration: number },
+  TCue extends { subtitleId?: string },
+  TSfx extends { time: number; category: string },
+>(input: {
+  subtitles: readonly TSub[];
+  cues?: readonly TCue[];
+  sfxEvents?: readonly TSfx[];
+  clipStart: number;
+  clipDuration: number;
+  nextSubtitles: readonly TSub[];
+}): { subtitles: TSub[]; cues?: TCue[]; sfxEvents?: TSfx[] } {
+  const clipEnd = input.clipStart + input.clipDuration;
+  const removed = input.subtitles.filter((subtitle) => {
+    const mid = subtitle.startTime + subtitle.duration / 2;
+    return mid >= input.clipStart && mid <= clipEnd;
+  });
+  const removedIds = new Set(removed.map((subtitle) => subtitle.id));
+  const kept = input.subtitles.filter((subtitle) => !removedIds.has(subtitle.id));
+  const subtitles = [...kept, ...input.nextSubtitles].sort((a, b) => a.startTime - b.startTime);
+  const cues = input.cues?.filter((cue) => !cue.subtitleId || !removedIds.has(cue.subtitleId));
+  let sfxEvents = input.sfxEvents ? [...input.sfxEvents] : undefined;
+  if (sfxEvents) {
+    for (const subtitle of removed) {
+      sfxEvents = sfxAfterSubtitleEdit(sfxEvents, input.subtitles, subtitle.id, null);
+    }
+  }
+  return { subtitles, cues, sfxEvents };
+}

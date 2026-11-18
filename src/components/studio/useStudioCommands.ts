@@ -39,6 +39,7 @@ import {
   matchCuesToChangedRanges,
   sfxAfterSubtitleEdit,
   splitRangesAt,
+  replaceSubtitlesInWindow,
   insertPointSpan,
   insertTimeSpan,
   movePointSpan,
@@ -938,14 +939,21 @@ export function useStudioCommands(input: StudioCommandInput) {
     clipDuration: number,
     newSubs: SubtitleSegment[]
   ) => {
-    const clipEnd = clipStartTime + clipDuration;
     updateCurrentProject((prev) => {
-      const kept = prev.subtitles.filter((s) => {
-        const mid = s.startTime + s.duration / 2;
-        return mid < clipStartTime || mid > clipEnd;
+      const replaced = replaceSubtitlesInWindow({
+        subtitles: prev.subtitles,
+        cues: prev.voiceoverCues,
+        sfxEvents: prev.sfxEvents,
+        clipStart: clipStartTime,
+        clipDuration,
+        nextSubtitles: newSubs,
       });
-      const merged = [...kept, ...newSubs].sort((a, b) => a.startTime - b.startTime);
-      return { ...prev, subtitles: merged };
+      return {
+        ...prev,
+        subtitles: replaced.subtitles,
+        voiceoverCues: replaced.cues ?? prev.voiceoverCues,
+        sfxEvents: replaced.sfxEvents ?? prev.sfxEvents,
+      };
     });
     if (newSubs[0]) {
       setSelectedSubtitleId(newSubs[0].id);

@@ -8,6 +8,7 @@ import {
   matchCuesToChangedRanges,
   sfxAfterSubtitleEdit,
   splitRangesAt,
+  replaceSubtitlesInWindow,
   insertTimeSpan,
   moveTimeSpan,
   remapPointsToDurations,
@@ -195,5 +196,31 @@ describe('shiftTracks', () => {
     expect(matchCuesToChangedRanges(cues, subtitles, next)).toEqual([
       { id: 'cue', subtitleId: 's1', startTime: 0.5, duration: 1, text: '一句' },
     ]);
+  });
+
+  it('drops the cue and subtitle sound when a clip caption is replaced', () => {
+    const replaced = replaceSubtitlesInWindow({
+      subtitles: [
+        { id: 's1', startTime: 0.1, duration: 2 },
+        { id: 's2', startTime: 4, duration: 1 },
+      ],
+      cues: [
+        { id: 'c1', subtitleId: 's1', startTime: 0.1 },
+        { id: 'c2', subtitleId: 's2', startTime: 4 },
+      ],
+      sfxEvents: [
+        { id: 'cut', time: 0.1, category: 'transition' },
+        { id: 'ding', time: 0.1, category: 'subtitle' },
+      ],
+      clipStart: 0,
+      clipDuration: 3,
+      nextSubtitles: [{ id: 'n1', startTime: 0.2, duration: 1.5 }],
+    });
+    expect(replaced.subtitles).toEqual([
+      { id: 'n1', startTime: 0.2, duration: 1.5 },
+      { id: 's2', startTime: 4, duration: 1 },
+    ]);
+    expect(replaced.cues).toEqual([{ id: 'c2', subtitleId: 's2', startTime: 4 }]);
+    expect(replaced.sfxEvents).toEqual([{ id: 'cut', time: 0.1, category: 'transition' }]);
   });
 });
