@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Check, Film, Image as ImageIcon, Loader2, Plus, Scissors, Sparkles, Upload, Wand2, X } from 'lucide-react';
 import type { EditingStyle, MediaAsset, PlatformId } from '../types/studio';
+import { formatEditSeconds } from '../client/timeline/editSeconds';
 import { apiFetch } from '../client/api/http';
 
 interface BriefAndMediaPanelProps {
@@ -511,7 +512,7 @@ export function BriefAndMediaPanel({
                     )}
                     <span>{asset.type === 'video' ? '视频' : '图片'}</span>
                     <span aria-hidden="true">·</span>
-                    <span>{asset.duration.toFixed(1)}s</span>
+                    <span>{formatEditSeconds(asset.duration)}s</span>
                   </div>
                 </div>
                 <button

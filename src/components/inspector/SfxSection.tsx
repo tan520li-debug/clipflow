@@ -10,6 +10,7 @@ import type {
   SubtitleSegment,
   TimelineClip,
 } from '../../types/studio';
+import { formatEditSeconds } from '../../client/timeline/editSeconds';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../../utils/canvasRenderer';
 import { apiFetch } from '../../client/api/http';
 
@@ -247,7 +248,7 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 text-[11px]">
                             <span className="font-mono-nums text-cyan-300 shrink-0">
-                              {ev.time.toFixed(1)}s
+                              {formatEditSeconds(ev.time)}s
                             </span>
                             <span className="text-zinc-500">·</span>
                             <span className="font-medium text-zinc-100 truncate">
@@ -387,7 +388,7 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
                         className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-cyan-300 transition-colors"
                       >
                         <span className="font-mono-nums text-cyan-400 shrink-0">
-                          {ev.time.toFixed(1)}s
+                          {formatEditSeconds(ev.time)}s
                         </span>
                         <span className="text-zinc-200 truncate">{ev.name}</span>
                       </button>

@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:51（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `9481039`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 10:51）
+
+你在抖音这条上播放之后点了暂停。10:49 页面停在「播放」，播放头显示 4.7 秒。镜头仍是 3.98、4.82、11.54、3.15 秒。简报仍是「刷新保留验证：早八冰拿铁要还在」。本班没有再点播放或暂停。
+
+已插入音效的时间以前收成一位小数，2.15 秒会显示成 2.1，4.75 秒会和 4.8 秒挤在一起。现在音效列表和素材时长按编辑时间显示。10:51 页面上这八个音效是 0.08、0.1、2.15、2.2、4.75、4.8、7.4、7.45 秒。音效本身的时间没有改。
+
+10:51 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 23 个文件、102 个测试通过。2.15、4.75、7.45 都保持两位。
+
+下面是 10:47 写下的原文。
+
 写于 2026-11-18 10:47（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔功能是 `2fdb990`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 10:47）

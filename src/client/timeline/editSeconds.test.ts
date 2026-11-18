@@ -11,5 +11,8 @@ describe('formatEditSeconds', () => {
     expect(formatEditSeconds(2)).toBe('2.0');
     expect(formatEditSeconds(2.4)).toBe('2.4');
     expect(formatEditSeconds(3.98)).toBe('3.98');
+    expect(formatEditSeconds(2.15)).toBe('2.15');
+    expect(formatEditSeconds(4.75)).toBe('4.75');
+    expect(formatEditSeconds(7.45)).toBe('7.45');
   });
 });

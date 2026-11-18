@@ -11,6 +11,7 @@ import {
   Upload,
 } from 'lucide-react';
 import type { MediaAiTags, MediaAsset, PlatformId } from '../types/studio';
+import { formatEditSeconds } from '../client/timeline/editSeconds';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../utils/canvasRenderer';
 import { apiFetch } from '../client/api/http';
 
@@ -363,7 +364,7 @@ export function MediaLibraryView({
                         )}
                         <span>{asset.type === 'video' ? '视频' : '图片'}</span>
                         <span aria-hidden="true">·</span>
-                        <span>{asset.duration.toFixed(1)}s</span>
+                        <span>{formatEditSeconds(asset.duration)}s</span>
                         {asset.fileSizeLabel && (
                           <>
                             <span aria-hidden="true">·</span>
