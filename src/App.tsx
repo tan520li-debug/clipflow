@@ -100,6 +100,9 @@ export default function App() {
           setAutoSoundOnEdit(session.autoSoundOnEdit);
           setSelectedClipId(session.selectedClipId);
           setSelectedSubtitleId(session.selectedSubtitleId);
+          const clips = session.projects[session.activePlatform]?.clips ?? [];
+          const total = getTotalDuration(clips);
+          setCurrentTime(total > 0 ? Math.min(session.playheadSec, total) : session.playheadSec);
         }
         setStorageHydrated(true);
       })
@@ -139,11 +142,19 @@ export default function App() {
       autoSoundOnEdit,
       selectedClipId,
       selectedSubtitleId,
+      playheadSec: currentTime,
     };
     const handle = window.setTimeout(() => {
       void saveStudioSession(session);
     }, 400);
-    return () => window.clearTimeout(handle);
+    const flush = () => {
+      void saveStudioSession(session);
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.clearTimeout(handle);
+      window.removeEventListener('pagehide', flush);
+    };
   }, [
     activePlatform,
     projects,
@@ -155,6 +166,7 @@ export default function App() {
     autoSoundOnEdit,
     selectedClipId,
     selectedSubtitleId,
+    currentTime,
     storageHydrated,
   ]);
 

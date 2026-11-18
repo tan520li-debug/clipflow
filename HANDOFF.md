@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-18 13:47（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `58de874`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 13:47）
+
+中文版导出在页面上跑通了。合成按钮写出 `clipflow_douyin_9x16_1080p.mp4`，页面显示 3.7 MB。亲自读了这块 blob：3,827,730 字节，文件头是 `ftypisom`。时长显示 00:23.4。浏览器直接录成 MP4，服务端日志里没有 FFmpeg 转码。镜头时长没改。简报仍是「刷新保留验证：早八冰拿铁要还在」。
+
+说话视频点过一次，台词用的是中文版第一句「早上3分钟，复刻咖啡店高级感」。三个视频模型都失败。最后一条服务端记录是这个接口只支持企业版视频平台。没有改模型名单，也没有再点第二次。失败提示改成说明当前密钥接不上，不再叫人去缩短台词。这条新提示还没在页面上再点一次，未验。
+
+播放头现在写进本地会话。刷新后先是 0，hydratation 完成后再回到保存的位置。页面上把中文版拨到 00:05.0，会话里的 `playheadSec` 是 5。刷新后时间码回到 `00:05.0 / 00:23.4`。超大配音拆到旁边那条存储、再刷新把音频读回来，仍未验。
+
+13:45 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、113 个测试通过。说话视频的提示在服务端，所以停掉原来的开发服务再开了一次。同一分钟读了 `http://127.0.0.1:3000/api/health`，状态码 200。
+
+下面是 13:30 写下的原文。
+
 写于 2026-11-18 13:30（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `ec41389`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 13:30）

@@ -33,6 +33,7 @@ export interface StudioSessionSnapshot {
   autoSoundOnEdit: boolean;
   selectedClipId: string | null;
   selectedSubtitleId: string | null;
+  playheadSec: number;
 }
 
 function isPlatformId(value: unknown): value is PlatformId {
@@ -76,6 +77,7 @@ export function normalizeStudioSession(raw: unknown): StudioSessionSnapshot | nu
     : ['douyin'];
   const duration = Number(session.targetDuration);
   const bpm = Number(session.bpm);
+  const playhead = Number(session.playheadSec);
 
   return {
     activePlatform: projects[activePlatform] ? activePlatform : (Object.keys(projects)[0] as PlatformId),
@@ -89,6 +91,7 @@ export function normalizeStudioSession(raw: unknown): StudioSessionSnapshot | nu
     selectedClipId: typeof session.selectedClipId === 'string' ? session.selectedClipId : null,
     selectedSubtitleId:
       typeof session.selectedSubtitleId === 'string' ? session.selectedSubtitleId : null,
+    playheadSec: Number.isFinite(playhead) ? Math.min(3600, Math.max(0, playhead)) : 0,
   };
 }
 

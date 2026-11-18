@@ -121,7 +121,15 @@ function failure(err: unknown): JobHttpResult {
       jsonBody: { error: '说话视频服务正忙，请稍后重试。' },
     };
   }
-  console.error('[talking-video]', err instanceof Error ? err.message : err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error('[talking-video]', message);
+  if (/vertex|enterprise agent platform|only supported/i.test(message)) {
+    return {
+      httpStatus: 502,
+      resultKind: 'json',
+      jsonBody: { error: '当前密钥不能生成说话视频。公开视频模型没有接上，这个接口要走企业版视频平台。' },
+    };
+  }
   return {
     httpStatus: 502,
     resultKind: 'json',

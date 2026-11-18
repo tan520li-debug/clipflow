@@ -34,6 +34,7 @@ describe('normalizeStudioSession', () => {
     expect(saved?.brief).toBe('刷新后还在');
     expect(saved?.targetPlatforms).toEqual(['douyin']);
     expect(saved?.selectedClipId).toBe('clip-a');
+    expect(saved?.playheadSec).toBe(0);
     expect(normalizeStudioSession({ projects: {} })).toBeNull();
     expect(normalizeStudioSession(null)).toBeNull();
   });
@@ -41,6 +42,7 @@ describe('normalizeStudioSession', () => {
   it('opens the Chinese cut when the saved platform is not Chinese or English', () => {
     const session = normalizeStudioSession({
       activePlatform: 'xiaohongshu',
+      playheadSec: 12.4,
       targetPlatforms: ['douyin', 'facebook', 'xiaohongshu'],
       projects: {
         douyin: {
@@ -63,6 +65,7 @@ describe('normalizeStudioSession', () => {
     });
 
     expect(session?.activePlatform).toBe('douyin');
+    expect(session?.playheadSec).toBe(12.4);
     expect(session?.targetPlatforms).toEqual(['douyin']);
     expect(session?.projects.xiaohongshu?.clips[0]?.label).toBe('仍保留');
   });
