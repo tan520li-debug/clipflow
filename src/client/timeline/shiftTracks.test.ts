@@ -3,6 +3,7 @@ import {
   duplicatePointSpan,
   duplicateTimeSpan,
   followSubtitleTimes,
+  cuesAfterSubtitleEdit,
   insertTimeSpan,
   moveTimeSpan,
   remapPointsToDurations,
@@ -121,5 +122,13 @@ describe('shiftTracks', () => {
       { id: 'cross', startTime: 1, duration: 1 },
       { id: 'after', startTime: 7, duration: 1 },
     ]);
+  });
+
+  it('moves a cue with its subtitle and drops the cue when the subtitle is deleted', () => {
+    const cues = [{ id: 'cue', subtitleId: 's1', startTime: 0.1, duration: 2 }];
+    expect(cuesAfterSubtitleEdit(cues, 's1', { startTime: 3, duration: 1.2, text: '新台词' })).toEqual([
+      { id: 'cue', subtitleId: 's1', startTime: 3, duration: 1.2, text: '新台词' },
+    ]);
+    expect(cuesAfterSubtitleEdit(cues, 's1', null)).toEqual([]);
   });
 });

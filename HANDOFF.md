@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:28（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 10:28）
+
+删掉一条字幕后，挂在它上面的配音还在播。改字幕的起止或台词时，配音还停在旧的时间和旧词上。现在删字幕会拿掉对应配音；改时间或台词时，配音跟着改。声音文件还是原来的，要重录才换声音。
+
+10:27 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 22 个文件、98 个测试通过。没有在页面上点删除字幕。没有点主播回答、配音、导出或说话视频。
+
+下面是 10:25 写下的原文。
+
 写于 2026-11-18 10:25（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 10:25）

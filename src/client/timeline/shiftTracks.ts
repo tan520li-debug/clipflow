@@ -290,3 +290,22 @@ export function followSubtitleTimes<T extends Ranged & { subtitleId?: string }>(
     return scaleRanges([item], factor);
   });
 }
+
+/** Drop a cue when its subtitle is deleted, or move it when that subtitle is retimed. */
+export function cuesAfterSubtitleEdit<T extends Ranged & { subtitleId?: string; text?: string }>(
+  cues: readonly T[],
+  subtitleId: string,
+  next: { startTime: number; duration: number; text?: string } | null,
+): T[] {
+  if (next === null) return cues.filter((cue) => cue.subtitleId !== subtitleId);
+  return cues.map((cue) =>
+    cue.subtitleId === subtitleId
+      ? {
+          ...cue,
+          startTime: round2(next.startTime),
+          duration: round2(next.duration),
+          ...(next.text !== undefined ? { text: next.text } : {}),
+        }
+      : cue,
+  );
+}

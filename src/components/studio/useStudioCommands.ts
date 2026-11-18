@@ -33,6 +33,7 @@ import {
   duplicatePointSpan,
   duplicateTimeSpan,
   followSubtitleTimes,
+  cuesAfterSubtitleEdit,
   insertPointSpan,
   insertTimeSpan,
   movePointSpan,
@@ -673,16 +674,32 @@ export function useStudioCommands(input: StudioCommandInput) {
   };
 
   const handleUpdateSubtitle = (subId: string, patch: Partial<SubtitleSegment>) => {
-    updateCurrentProject((prev) => ({
-      ...prev,
-      subtitles: prev.subtitles.map((s) => (s.id === subId ? { ...s, ...patch } : s)),
-    }));
+    updateCurrentProject((prev) => {
+      const subtitles = prev.subtitles.map((s) => (s.id === subId ? { ...s, ...patch } : s));
+      const subtitle = subtitles.find((s) => s.id === subId);
+      const retimed = patch.startTime !== undefined || patch.duration !== undefined;
+      return {
+        ...prev,
+        subtitles,
+        voiceoverCues:
+          subtitle && prev.voiceoverCues && (retimed || patch.text !== undefined)
+            ? cuesAfterSubtitleEdit(prev.voiceoverCues, subId, {
+                startTime: subtitle.startTime,
+                duration: subtitle.duration,
+                ...(patch.text !== undefined ? { text: patch.text } : {}),
+              })
+            : prev.voiceoverCues,
+      };
+    });
   };
 
   const handleDeleteSubtitle = (subId: string) => {
     updateCurrentProject((prev) => ({
       ...prev,
       subtitles: prev.subtitles.filter((s) => s.id !== subId),
+      voiceoverCues: prev.voiceoverCues
+        ? cuesAfterSubtitleEdit(prev.voiceoverCues, subId, null)
+        : prev.voiceoverCues,
     }));
     setSelectedSubtitleId(null);
   };
