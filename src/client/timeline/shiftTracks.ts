@@ -259,6 +259,20 @@ export function remapPointsToDurations<T extends Pointed>(
   return out;
 }
 
+/** After a clip is cut, sounds at or after the cut that still name the original clip belong to the new piece. */
+export function assignPointsToSplitClip<T extends Pointed & { linkedClipId?: string }>(
+  items: readonly T[],
+  splitAt: number,
+  fromClipId: string,
+  toClipId: string,
+): T[] {
+  return items.map((item) =>
+    item.linkedClipId === fromClipId && item.time >= splitAt - 0.0001
+      ? { ...item, linkedClipId: toClipId }
+      : item,
+  );
+}
+
 /** Stretch cues and effects across a rebuilt timeline. Linked cues follow their subtitle. */
 export function scaleRanges<T extends Ranged>(items: readonly T[], factor: number): T[] {
   if (!Number.isFinite(factor) || factor <= 0) return [...items];

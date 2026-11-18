@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assignPointsToSplitClip,
   duplicatePointSpan,
   duplicateTimeSpan,
   followSubtitleTimes,
@@ -83,6 +84,26 @@ describe('shiftTracks', () => {
       [1.88, 2.6],
     );
     expect(next).toEqual([{ id: 'later', startTime: 2.08, duration: 1 }]);
+  });
+
+  it('gives sounds on the new piece to that piece after a split', () => {
+    const next = assignPointsToSplitClip(
+      [
+        { id: 'early', time: 0.4, linkedClipId: 'c1' },
+        { id: 'cut', time: 1, linkedClipId: 'c1' },
+        { id: 'other', time: 1.4, linkedClipId: 'c2' },
+        { id: 'loose', time: 1.6 },
+      ],
+      1,
+      'c1',
+      'c1-b',
+    );
+    expect(next).toEqual([
+      { id: 'early', time: 0.4, linkedClipId: 'c1' },
+      { id: 'cut', time: 1, linkedClipId: 'c1-b' },
+      { id: 'other', time: 1.4, linkedClipId: 'c2' },
+      { id: 'loose', time: 1.6 },
+    ]);
   });
 
   it('drops a sound that sat in the trimmed tail', () => {

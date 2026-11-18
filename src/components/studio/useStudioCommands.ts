@@ -29,6 +29,7 @@ import { apiFetch } from '../../client/api/http';
 import { duplicateClip } from '../../client/timeline/duplicateClip';
 import { snapClipsToBeat } from '../../client/timeline/snapBeat';
 import {
+  assignPointsToSplitClip,
   clipStart,
   duplicatePointSpan,
   duplicateTimeSpan,
@@ -547,7 +548,14 @@ export function useStudioCommands(input: StudioCommandInput) {
     updateCurrentProject((prev) => {
       const nextClips = [...prev.clips];
       nextClips.splice(index, 1, split.first, split.second);
-      return { ...prev, clips: nextClips };
+      const splitAt = clipStart(prev.clips, index) + split.first.duration;
+      return {
+        ...prev,
+        clips: nextClips,
+        sfxEvents: prev.sfxEvents
+          ? assignPointsToSplitClip(prev.sfxEvents, splitAt, clip.id, split.second.id)
+          : prev.sfxEvents,
+      };
     });
     setSelectedClipId(split.second.id);
     setSelectedSubtitleId(null);
