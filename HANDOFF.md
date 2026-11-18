@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:04（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 10:04）
+
+「复制片段」会把开场钩子标签一并抄到副本上。现在副本保留画面、时长、转场和运镜，钩子留在原来的那条。
+
+10:03 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 21 个文件、87 个测试通过。没有在页面上点复制，避免改掉已保存的手冲时间线。没有点主播回答、配音、导出或说话视频。
+
+下面是 01:53 写下的原文。
+
 写于 2026-11-18 01:53（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 01:53）

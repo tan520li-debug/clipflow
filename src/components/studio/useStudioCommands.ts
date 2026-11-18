@@ -26,6 +26,7 @@ import type {
   VoiceoverVoice,
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
+import { duplicateClip } from '../../client/timeline/duplicateClip';
 import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
 import { snapClipsToBeat } from '../../client/timeline/snapBeat';
 import { StudioAudioEngine } from '../../utils/audioEngine';
@@ -543,11 +544,7 @@ export function useStudioCommands(input: StudioCommandInput) {
       const idx = prev.clips.findIndex((c) => c.id === clipId);
       if (idx === -1) return prev;
       const orig = prev.clips[idx];
-      const copy: TimelineClip = {
-        ...orig,
-        id: `${orig.id}-copy-${Date.now()}`,
-        label: `${orig.label} 副本`,
-      };
+      const copy = duplicateClip(orig, `${orig.id}-copy-${Date.now()}`);
       const next = [...prev.clips];
       next.splice(idx + 1, 0, copy);
       return { ...prev, clips: next };
