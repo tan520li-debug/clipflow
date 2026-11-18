@@ -20,6 +20,7 @@ import { editionLabel, exportSrtSubtitles, formatTimecode, getTotalDuration } fr
 import { StudioAudioEngine } from '../utils/audioEngine';
 import { findClipAtTime, renderTimelineFrame, type LoadedMediaElement } from '../utils/canvasRenderer';
 import { apiFetch } from '../client/api/http';
+import { exportSubtitleDownloadName, exportVideoDownloadName } from '../client/export/exportDownloadName';
 import { advanceStudioCursor, clipVideoSeekSec, digitalHumanSeekSec, shouldSeekMedia, shouldWhooshOnClipChange } from '../client/playback/studioClock';
 
 interface ExportModalProps {
@@ -650,7 +651,7 @@ export function ExportModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${targetPlatform}_subtitles.srt`;
+    a.download = exportSubtitleDownloadName(targetPlatform);
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1284,7 +1285,12 @@ export function ExportModal({
                     ) : (
                       <a
                         href={downloadUrl}
-                        download={`clipflow_${targetPlatform}_${exportAspectRatio.replace(':', 'x')}_${resolutionTier}.${downloadExt}`}
+                        download={exportVideoDownloadName(
+                          targetPlatform,
+                          exportAspectRatio,
+                          resolutionTier,
+                          downloadExt,
+                        )}
                         className="w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center justify-center gap-2 transition-colors"
                       >
                         <Download className="w-4 h-4" />

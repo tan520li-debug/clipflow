@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 15:26（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `fb76c40`。`origin/main` 仍是 `6bf7575`。没有推送，没有再合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。`data/` 不要提交。
+
+## 本班（2026-11-18 15:26）
+
+15:26 把英文版转码结果从 `data\jobs\4ff805d6-6ff3-47c2-aab0-8c2ef64cf3c4.bin` 复制到 `D:\clipflow\clipflow\data\exports\clipflow_tiktok_9x16_1080p.mp4`。复制后读到 4,979,842 字节，文件头 `ftypisom`。这份在 `data/` 里，不进仓库。
+
+之后的下载名不再带发布平台。中文版是 `clipflow_zh_…`，英文版是 `clipflow_en_…`。字幕同样用 `clipflow_zh_subtitles.srt` 和 `clipflow_en_subtitles.srt`。已经落盘的那份英文成片仍用当时的 `clipflow_tiktok_9x16_1080p.mp4`。新名字没有再导出一次，页面未验。
+
+15:26 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 27 个文件、122 个测试通过。没有点「AI 生成中英文两版」，没有点配齐，没有点说话视频。
+
+下面是 15:13 写下的原文。
+
 写于 2026-11-18 15:13（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/main` 是 `6bf7575`。这一笔还没有合进 `main`，也没有推送。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 15:13）
