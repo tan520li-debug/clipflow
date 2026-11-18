@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 13:57（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `f611af9`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 13:57）
+
+超大配音拆到旁边再刷新，页面上验过了。中文版第一句配音原来有 253480 个字的音频。先把整段会话复制一份，再把这句音频单独存成 `clipflow-cue-audio:douyin:vo-1794969213206-0`，会话里只留这个编号。刷新时挡住离开页面的自动保存，避免内存里的整段音频把这次拆分盖掉。
+
+刷新后简报仍是「刷新保留验证：早八冰拿铁要还在」。中文版镜头仍是 3.98、4.82、11.54、3.15 秒。第一句台词还是「早上3分钟，复刻咖啡店高级感」，音频回到 253480。旁边那条记录也是 253480。另外三句仍是 309800、739880、192040。核对后删掉旁边那条和备份，会话里的音频还在。
+
+没有改代码。13:50 那次 `npm run check` 仍然是最近一次，116 个测试。
+
+下面是 13:52 写下的原文。
+
 写于 2026-11-18 13:52（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `a9a21ef`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 13:52）
