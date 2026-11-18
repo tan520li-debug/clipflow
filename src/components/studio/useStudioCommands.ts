@@ -26,6 +26,7 @@ import type {
   VoiceoverVoice,
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
+import { placeSuggestedSfxEvents } from '../../domain/timeline/placeSfx';
 import { duplicateClip } from '../../client/timeline/duplicateClip';
 import { snapClipsToBeat } from '../../client/timeline/snapBeat';
 import {
@@ -488,7 +489,16 @@ export function useStudioCommands(input: StudioCommandInput) {
               voiceoverEnabled: adjustedVoiceoverCues.length > 0,
               bgmAutoDucking: true,
             },
-            sfxEvents: Array.isArray(sfxData?.events) ? (sfxData.events as SfxEvent[]) : cur.sfxEvents,
+            sfxEvents: Array.isArray(sfxData?.events)
+              ? placeSuggestedSfxEvents(sfxData.events as SfxEvent[], {
+                  totalDuration: cursor,
+                  clips: timelineNodes.map((node) => ({
+                    startTime: node.startTime,
+                    endTime: node.endTime,
+                  })),
+                  subtitles: cur.subtitles,
+                })
+              : cur.sfxEvents,
           };
 
           // Dynamically expand overflowing clip durations and shift all subsequent clip/subtitle/cue/SFX start times

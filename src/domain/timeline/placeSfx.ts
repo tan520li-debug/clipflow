@@ -33,3 +33,23 @@ export function placeSuggestedSfxTime(input: {
   if (input.category === 'hook' && raw > 0.45) return clamp(0.08);
   return clamp(raw);
 }
+
+export function placeSuggestedSfxEvents<T extends { time: number; category: string }>(
+  events: readonly T[],
+  input: {
+    totalDuration: number;
+    clips: readonly SfxClipBound[];
+    subtitles: readonly { startTime: number }[];
+  },
+): T[] {
+  return events.map((event) => ({
+    ...event,
+    time: placeSuggestedSfxTime({
+      time: event.time,
+      category: event.category,
+      totalDuration: input.totalDuration,
+      clips: input.clips,
+      subtitles: input.subtitles,
+    }),
+  }));
+}

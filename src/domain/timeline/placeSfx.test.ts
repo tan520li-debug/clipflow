@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeSuggestedSfxTime } from './placeSfx';
+import { placeSuggestedSfxEvents, placeSuggestedSfxTime } from './placeSfx';
 
 const clips = [
   { startTime: 0, endTime: 3.98 },
@@ -61,5 +61,13 @@ describe('placeSuggestedSfxTime', () => {
         subtitles,
       }),
     ).toBe(4.04);
+  });
+
+  it('places each event in a returned list', () => {
+    const [event] = placeSuggestedSfxEvents(
+      [{ id: 'hit', time: 2.15, category: 'transition' }],
+      { totalDuration: 23.49, clips, subtitles },
+    );
+    expect(event).toEqual({ id: 'hit', time: 3.98, category: 'transition' });
   });
 });

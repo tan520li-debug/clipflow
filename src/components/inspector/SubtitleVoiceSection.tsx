@@ -15,6 +15,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { formatEditSeconds } from '../../client/timeline/editSeconds';
+import { placeSuggestedSfxEvents } from '../../domain/timeline/placeSfx';
 import type {
   AudioConfig,
   BgmPreset,
@@ -513,7 +514,14 @@ export function SubtitleVoiceSection({
       }
 
       if (sfxResult.status === 'fulfilled' && sfxResult.value && Array.isArray(sfxResult.value.events)) {
-        const events = sfxResult.value.events as SfxEvent[];
+        const events = placeSuggestedSfxEvents(sfxResult.value.events as SfxEvent[], {
+          totalDuration: cursor,
+          clips: timelineNodes.map((node) => ({
+            startTime: node.startTime,
+            endTime: node.endTime,
+          })),
+          subtitles,
+        });
         onSetSfxEvents(events);
         sfxRef.current?.applyPackaged({
           librarySummary: sfxResult.value.librarySummary || '已自动匹配转场与动作音效。',

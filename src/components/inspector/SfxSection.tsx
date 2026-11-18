@@ -11,7 +11,7 @@ import type {
   TimelineClip,
 } from '../../types/studio';
 import { formatEditSeconds } from '../../client/timeline/editSeconds';
-import { placeSuggestedSfxTime } from '../../domain/timeline/placeSfx';
+import { placeSuggestedSfxEvents } from '../../domain/timeline/placeSfx';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../../utils/canvasRenderer';
 import { apiFetch } from '../../client/api/http';
 
@@ -84,11 +84,23 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
     () => ({
       clearError: () => setSfxError(null),
       applyPackaged: (suggestion) => {
-        setSfxSuggestion(suggestion);
+        const placed = placeSuggestedSfxEvents(suggestion.events, {
+          totalDuration: clips.reduce((sum, clip) => sum + clip.duration, 0),
+          clips: clips.reduce<{ startTime: number; endTime: number }[]>((bounds, clip) => {
+            const startTime = bounds.length === 0 ? 0 : bounds[bounds.length - 1].endTime;
+            bounds.push({
+              startTime: Number(startTime.toFixed(2)),
+              endTime: Number((startTime + clip.duration).toFixed(2)),
+            });
+            return bounds;
+          }, []),
+          subtitles,
+        });
+        setSfxSuggestion({ ...suggestion, events: placed });
         setSfxAppliedAll(true);
       },
     }),
-    []
+    [clips, subtitles],
   );
 
   const handleAnalyzeSfx = async () => {
@@ -148,19 +160,17 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
         throw new Error(data?.error || 'AI 音效库推荐失败，请稍后重试。');
       }
 
-      const events = (Array.isArray(data?.events) ? (data.events as SfxEvent[]) : []).map((event) => ({
-        ...event,
-        time: placeSuggestedSfxTime({
-          time: event.time,
-          category: event.category,
+      const events = placeSuggestedSfxEvents(
+        Array.isArray(data?.events) ? (data.events as SfxEvent[]) : [],
+        {
           totalDuration: cursor,
           clips: timelineNodes.map((node) => ({
             startTime: node.startTime,
             endTime: node.endTime,
           })),
           subtitles,
-        }),
-      }));
+        },
+      );
       if (events.length === 0) {
         throw new Error('未能分析出匹配的节点音效，请重试。');
       }

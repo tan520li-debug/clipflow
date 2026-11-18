@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 11:01（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `645a3e5`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 11:01）
+
+一键配齐和自动剪辑配声音时，音效推荐不经过刚才的落点，旧秒数会直接写进时间线。现在这两处和音效面板的打包结果都先贴到当前切点再写入。
+
+11:00 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、106 个测试通过。一条 2.15 秒的转场声在列表里变成 3.98 秒。
+
+开发服务原来那次启动没有带上新的接口。11:01 停掉后重新开了，日志是 `ClipFlow Studio server running on http://0.0.0.0:3000`。同一分钟读了 `http://127.0.0.1:3000/api/health`，状态码 200。没有再点配齐、插入全部推荐、配音、导出或说话视频。时间线上原来的八个音效还在。
+
+下面是 10:57 写下的原文。
+
 写于 2026-11-18 10:57（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `869ba0b`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 10:57）
