@@ -27,8 +27,17 @@ import type {
 } from '../../types/studio';
 import { apiFetch } from '../../client/api/http';
 import { duplicateClip } from '../../client/timeline/duplicateClip';
-import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
 import { snapClipsToBeat } from '../../client/timeline/snapBeat';
+import {
+  clipStart,
+  duplicatePointSpan,
+  duplicateTimeSpan,
+  movePointSpan,
+  moveTimeSpan,
+  removePointSpan,
+  removeTimeSpan,
+} from '../../client/timeline/shiftTracks';
+import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
 import { StudioAudioEngine } from '../../utils/audioEngine';
 import {
   alignProjectTimelineToVoiceover,
@@ -532,10 +541,20 @@ export function useStudioCommands(input: StudioCommandInput) {
       if (idx === -1) return prev;
       const targetIdx = idx + direction;
       if (targetIdx < 0 || targetIdx >= prev.clips.length) return prev;
+      const from = { start: clipStart(prev.clips, idx), duration: prev.clips[idx].duration };
       const next = [...prev.clips];
       const [item] = next.splice(idx, 1);
       next.splice(targetIdx, 0, item);
-      return { ...prev, clips: next };
+      const toStart = clipStart(next, next.findIndex((clip) => clip.id === clipId));
+      return {
+        ...prev,
+        clips: next,
+        subtitles: moveTimeSpan(prev.subtitles, from, toStart),
+        voiceoverCues: prev.voiceoverCues
+          ? moveTimeSpan(prev.voiceoverCues, from, toStart)
+          : prev.voiceoverCues,
+        sfxEvents: prev.sfxEvents ? movePointSpan(prev.sfxEvents, from, toStart) : prev.sfxEvents,
+      };
     });
   };
 
@@ -544,18 +563,48 @@ export function useStudioCommands(input: StudioCommandInput) {
       const idx = prev.clips.findIndex((c) => c.id === clipId);
       if (idx === -1) return prev;
       const orig = prev.clips[idx];
-      const copy = duplicateClip(orig, `${orig.id}-copy-${Date.now()}`);
+      const stamp = Date.now();
+      const copy = duplicateClip(orig, `${orig.id}-copy-${stamp}`);
+      const source = { start: clipStart(prev.clips, idx), duration: orig.duration };
+      const copyId = (id: string) => `${id}-copy-${stamp}`;
       const next = [...prev.clips];
       next.splice(idx + 1, 0, copy);
-      return { ...prev, clips: next };
+      return {
+        ...prev,
+        clips: next,
+        subtitles: duplicateTimeSpan(prev.subtitles, source, copyId),
+        voiceoverCues: prev.voiceoverCues
+          ? duplicateTimeSpan(prev.voiceoverCues, source, copyId)
+          : prev.voiceoverCues,
+        sfxEvents: prev.sfxEvents
+          ? duplicatePointSpan(prev.sfxEvents, source, copyId).map((event) =>
+              event.linkedClipId === orig.id && event.id.endsWith(`-copy-${stamp}`)
+                ? { ...event, linkedClipId: copy.id }
+                : event,
+            )
+          : prev.sfxEvents,
+      };
     });
   };
 
   const handleDeleteClip = (clipId: string) => {
     if (currentProject.clips.length <= 1) return;
     updateCurrentProject((prev) => {
-      const next = prev.clips.filter((c) => c.id !== clipId);
-      return { ...prev, clips: next };
+      if (prev.clips.length <= 1) return prev;
+      const idx = prev.clips.findIndex((c) => c.id === clipId);
+      if (idx === -1) return prev;
+      const span = { start: clipStart(prev.clips, idx), duration: prev.clips[idx].duration };
+      return {
+        ...prev,
+        clips: prev.clips.filter((c) => c.id !== clipId),
+        subtitles: removeTimeSpan(prev.subtitles, span),
+        voiceoverCues: prev.voiceoverCues
+          ? removeTimeSpan(prev.voiceoverCues, span)
+          : prev.voiceoverCues,
+        sfxEvents: prev.sfxEvents
+          ? removePointSpan(prev.sfxEvents, span).filter((event) => event.linkedClipId !== clipId)
+          : prev.sfxEvents,
+      };
     });
     setSelectedClipId(null);
   };
