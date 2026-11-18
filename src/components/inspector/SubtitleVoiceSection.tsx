@@ -531,7 +531,8 @@ export function SubtitleVoiceSection({
         });
         completedParts.push(`${placed.length} 处节点音效`);
       } else if (sfxResult.status === 'rejected') {
-        setVoiceoverError(sfxResult.reason instanceof Error ? sfxResult.reason.message : '音效推荐失败');
+        const message = sfxResult.reason instanceof Error ? sfxResult.reason.message : '音效推荐失败';
+        sfxRef.current?.showError(message);
       }
 
       const note = packagedAudioNote(completedParts, soundEffectsLanded);

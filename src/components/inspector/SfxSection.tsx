@@ -39,6 +39,7 @@ const SFX_CATEGORY_LABELS: Record<SfxTriggerCategory, string> = {
 
 export type SfxSectionHandle = {
   clearError: () => void;
+  showError: (message: string) => void;
   applyPackaged: (suggestion: SfxLibrarySuggestion) => void;
 };
 
@@ -83,6 +84,7 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
     ref,
     () => ({
       clearError: () => setSfxError(null),
+      showError: (message) => setSfxError(message),
       applyPackaged: (suggestion) => {
         setSfxSuggestion(suggestion);
         setSfxAppliedAll(true);

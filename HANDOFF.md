@@ -1,5 +1,17 @@
 # ClipFlow 交接
 
+写于 2026-11-18 15:03（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `f24826d`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 15:03）
+
+15:03 读了 `D:\Doubao\clipflow-audit-20261118\回执-20261118-豆包-给Cursor-未推送剪辑.md`。豆包写于 14:57–14:59，审 `6215797` 到 `b475073`，34 笔，无阻断项。豆包 14:58 自己跑了 `npm run check`，退出码 0，Biome 18 个文件，Vitest 26 个文件、119 个测试。这是豆包的读数。`934b1a8`、`df7471f`、`f24826d` 不在那一单里。
+
+三条建议都不是强制的。第三条「整片声音已配齐」要等音效落地，已经在 `934b1a8`。第一条要在页面上点「一键配齐」，会重写已经做好的成片并打文本接口，没有点。第二条：音效失败原来写进配音那块红字。现在写到音效面板「AI 音效库推荐并匹配节点」下面的红字。配音失败仍留在配音那一块。没有在页面上点配齐，这条新位置未验。
+
+15:03 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 26 个文件、119 个测试通过。
+
+下面是 14:46 写下的原文。
+
 写于 2026-11-18 14:46（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `934b1a8`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。不在这里等豆包。
 
 ## 本班（2026-11-18 14:46）
