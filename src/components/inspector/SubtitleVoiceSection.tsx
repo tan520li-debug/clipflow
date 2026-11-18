@@ -15,6 +15,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { formatEditSeconds } from '../../client/timeline/editSeconds';
+import { packagedAudioNote } from '../../client/timeline/packagedAudioNote';
 import type {
   AudioConfig,
   BgmPreset,
@@ -517,7 +518,11 @@ export function SubtitleVoiceSection({
         sfxResult = { status: 'rejected', reason: error };
       }
 
-      if (sfxResult.status === 'fulfilled' && sfxResult.value && Array.isArray(sfxResult.value.events)) {
+      const soundEffectsLanded =
+        sfxResult.status === 'fulfilled' &&
+        !!sfxResult.value &&
+        Array.isArray(sfxResult.value.events);
+      if (soundEffectsLanded && sfxResult.status === 'fulfilled' && sfxResult.value) {
         const events = sfxResult.value.events as SfxEvent[];
         const placed = onSetSfxEvents(events) ?? events;
         sfxRef.current?.applyPackaged({
@@ -529,9 +534,8 @@ export function SubtitleVoiceSection({
         setVoiceoverError(sfxResult.reason instanceof Error ? sfxResult.reason.message : '音效推荐失败');
       }
 
-      if (completedParts.length > 0) {
-        setFullAudioNote(`整片声音已配齐：${completedParts.join(' + ')} + 人声闪避。点击播放器即可试听成片效果！`);
-      }
+      const note = packagedAudioNote(completedParts, soundEffectsLanded);
+      if (note) setFullAudioNote(note);
     } finally {
       setPackagingFullAudio(false);
     }

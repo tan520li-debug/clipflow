@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 14:42（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `df7471f`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。不在这里等豆包。
+
+## 本班（2026-11-18 14:42）
+
+一键配齐在音效没写上时仍说「整片声音已配齐」。现在音效落地才用这句。配乐或配音留下、音效没有落地时，注明已留下的部分，并写再点「AI 音效库推荐并匹配节点」。超时仍是 20 秒，没有加长。没有在页面上点配齐，这句新文案未在页面上验过。
+
+14:42 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 26 个文件、119 个测试通过。
+
+下面是 14:40 写下的原文。
+
 写于 2026-11-18 14:40（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `b475073`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。不在这里等豆包。
 
 ## 本班（2026-11-18 14:40）
