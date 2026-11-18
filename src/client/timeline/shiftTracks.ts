@@ -305,6 +305,47 @@ export function followSubtitleTimes<T extends Ranged & { subtitleId?: string }>(
   });
 }
 
+const MIN_SPLIT_RANGE_SEC = 0.05;
+
+/** Cut a caption that crosses a point. The left piece keeps its id. A sliver on either side stays whole. */
+export function splitRangesAt<T extends Ranged & { id: string }>(
+  items: readonly T[],
+  at: number,
+  copyId: (id: string) => string,
+): T[] {
+  const out: T[] = [];
+  for (const item of items) {
+    const end = item.startTime + item.duration;
+    const left = round2(at - item.startTime);
+    const right = round2(end - at);
+    if (item.startTime >= at - 0.0001 || end <= at + 0.0001 || left < MIN_SPLIT_RANGE_SEC || right < MIN_SPLIT_RANGE_SEC) {
+      out.push(item);
+      continue;
+    }
+    out.push({ ...item, duration: left });
+    out.push({ ...item, id: copyId(item.id), startTime: round2(at), duration: right });
+  }
+  return out;
+}
+
+/** Shorten a cue when its caption was cut, without copying the spoken audio onto the new piece. */
+export function matchCuesToChangedRanges<
+  T extends Ranged & { subtitleId?: string },
+>(
+  cues: readonly T[],
+  before: readonly { id: string; startTime: number; duration: number }[],
+  after: readonly { id: string; startTime: number; duration: number }[],
+): T[] {
+  const beforeById = new Map(before.map((item) => [item.id, item]));
+  let next = [...cues];
+  for (const item of after) {
+    const previous = beforeById.get(item.id);
+    if (!previous || (previous.startTime === item.startTime && previous.duration === item.duration)) continue;
+    next = cuesAfterSubtitleEdit(next, item.id, { startTime: item.startTime, duration: item.duration });
+  }
+  return next;
+}
+
 /** Drop a cue when its subtitle is deleted, or move it when that subtitle is retimed. */
 export function cuesAfterSubtitleEdit<T extends Ranged & { subtitleId?: string; text?: string }>(
   cues: readonly T[],

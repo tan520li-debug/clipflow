@@ -5,7 +5,9 @@ import {
   duplicateTimeSpan,
   followSubtitleTimes,
   cuesAfterSubtitleEdit,
+  matchCuesToChangedRanges,
   sfxAfterSubtitleEdit,
+  splitRangesAt,
   insertTimeSpan,
   moveTimeSpan,
   remapPointsToDurations,
@@ -172,6 +174,26 @@ describe('shiftTracks', () => {
       { id: 'cut', time: 3.98, category: 'transition' },
       { id: 'ding', time: 5, category: 'subtitle' },
       { id: 'later', time: 8.86, category: 'subtitle' },
+    ]);
+  });
+
+  it('splits a caption that crosses the cut and keeps the cue on the left piece', () => {
+    const subtitles = [
+      { id: 's1', startTime: 0.5, duration: 3 },
+      { id: 's2', startTime: 4, duration: 1 },
+    ];
+    const next = splitRangesAt(subtitles, 1.5, (id) => `${id}-b`);
+    expect(next).toEqual([
+      { id: 's1', startTime: 0.5, duration: 1 },
+      { id: 's1-b', startTime: 1.5, duration: 2 },
+      { id: 's2', startTime: 4, duration: 1 },
+    ]);
+    expect(splitRangesAt([{ id: 'edge', startTime: 1.48, duration: 1 }], 1.5, (id) => `${id}-b`)).toEqual([
+      { id: 'edge', startTime: 1.48, duration: 1 },
+    ]);
+    const cues = [{ id: 'cue', subtitleId: 's1', startTime: 0.5, duration: 3, text: '一句' }];
+    expect(matchCuesToChangedRanges(cues, subtitles, next)).toEqual([
+      { id: 'cue', subtitleId: 's1', startTime: 0.5, duration: 1, text: '一句' },
     ]);
   });
 });

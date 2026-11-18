@@ -36,7 +36,9 @@ import {
   duplicateTimeSpan,
   followSubtitleTimes,
   cuesAfterSubtitleEdit,
+  matchCuesToChangedRanges,
   sfxAfterSubtitleEdit,
+  splitRangesAt,
   insertPointSpan,
   insertTimeSpan,
   movePointSpan,
@@ -553,16 +555,22 @@ export function useStudioCommands(input: StudioCommandInput) {
     const info = findClipAtTime(currentProject.clips, currentTime);
     if (!info) return;
     const { index, clip, localTime } = info;
-    const split = splitClipAtLocalTime(clip, localTime, `${clip.id}-split-${Date.now()}`);
+    const stamp = Date.now();
+    const split = splitClipAtLocalTime(clip, localTime, `${clip.id}-split-${stamp}`);
     if (!split) return;
 
     updateCurrentProject((prev) => {
       const nextClips = [...prev.clips];
       nextClips.splice(index, 1, split.first, split.second);
       const splitAt = clipStart(prev.clips, index) + split.first.duration;
+      const subtitles = splitRangesAt(prev.subtitles, splitAt, (id) => `${id}-split-${stamp}`);
       return {
         ...prev,
         clips: nextClips,
+        subtitles,
+        voiceoverCues: prev.voiceoverCues
+          ? matchCuesToChangedRanges(prev.voiceoverCues, prev.subtitles, subtitles)
+          : prev.voiceoverCues,
         sfxEvents: prev.sfxEvents
           ? assignPointsToSplitClip(prev.sfxEvents, splitAt, clip.id, split.second.id)
           : prev.sfxEvents,

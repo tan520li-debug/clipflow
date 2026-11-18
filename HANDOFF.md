@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 11:48（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `de6137c`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 11:48）
+
+分割只切开镜头。跨在刀口上的字幕仍是一整条，配音也还盖住两段。现在两边都至少 0.05 秒的字幕从刀口切开：左半句留原编号，右半句新编号。配音只跟着左半句缩短，不复制到右半句。任一边不到 0.05 秒的字幕保持整条。
+
+11:48 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、109 个测试通过。0.5 秒开始、长 3 秒的字幕在 1.5 秒切开后是 1 秒和 2 秒；配音时长变成 1 秒，台词还在。没有在页面上点分割。
+
+下面是 11:16 写下的原文。
+
 写于 2026-11-18 11:16（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `68264ca`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 11:16）
