@@ -171,3 +171,122 @@ export function duplicatePointSpan<T extends Pointed & { id: string }>(
     }));
   return [...shifted, ...copies];
 }
+
+function clipBounds(durations: readonly number[]): { starts: number[]; total: number } {
+  const starts: number[] = [];
+  let total = 0;
+  for (const duration of durations) {
+    starts.push(total);
+    total += duration;
+  }
+  return { starts, total };
+}
+
+/**
+ * Keep each range on the same part of a clip after that clip's length changes.
+ * A piece that fell in the trimmed tail is dropped. The first surviving piece keeps the id.
+ */
+export function remapRangesToDurations<T extends Ranged & { id: string }>(
+  items: readonly T[],
+  oldDurations: readonly number[],
+  newDurations: readonly number[],
+): T[] {
+  if (oldDurations.length !== newDurations.length) return [...items];
+  const oldBounds = clipBounds(oldDurations);
+  const newBounds = clipBounds(newDurations);
+  const out: T[] = [];
+  for (const item of items) {
+    const itemEnd = item.startTime + item.duration;
+    const pieces: { start: number; end: number }[] = [];
+    for (let i = 0; i < oldDurations.length; i++) {
+      const oldStart = oldBounds.starts[i];
+      const oldEnd = oldStart + oldDurations[i];
+      const from = Math.max(item.startTime, oldStart);
+      const to = Math.min(itemEnd, oldEnd);
+      if (to - from < 0.0001) continue;
+      const localStart = from - oldStart;
+      const newDur = newDurations[i];
+      if (localStart >= newDur) continue;
+      const keptLocalEnd = Math.min(to - oldStart, newDur);
+      pieces.push({
+        start: newBounds.starts[i] + localStart,
+        end: newBounds.starts[i] + keptLocalEnd,
+      });
+    }
+    const merged: { start: number; end: number }[] = [];
+    for (const piece of pieces) {
+      const last = merged[merged.length - 1];
+      if (last && Math.abs(last.end - piece.start) < 0.02) last.end = piece.end;
+      else merged.push({ ...piece });
+    }
+    merged.forEach((piece, index) => {
+      const duration = round2(piece.end - piece.start);
+      if (duration < 0.05) return;
+      out.push({
+        ...item,
+        id: index === 0 ? item.id : `${item.id}-keep-${index}`,
+        startTime: round2(piece.start),
+        duration,
+      });
+    });
+  }
+  return out;
+}
+
+/** Move a point with its clip. A point in the trimmed tail is dropped. */
+export function remapPointsToDurations<T extends Pointed>(
+  items: readonly T[],
+  oldDurations: readonly number[],
+  newDurations: readonly number[],
+): T[] {
+  if (oldDurations.length !== newDurations.length) return [...items];
+  const oldBounds = clipBounds(oldDurations);
+  const newBounds = clipBounds(newDurations);
+  const out: T[] = [];
+  for (const item of items) {
+    for (let i = 0; i < oldDurations.length; i++) {
+      const oldStart = oldBounds.starts[i];
+      const oldEnd = oldStart + oldDurations[i];
+      const isLast = i === oldDurations.length - 1;
+      if (item.time < oldEnd || isLast) {
+        const local = item.time - oldStart;
+        if (local > newDurations[i] + 0.0001) break;
+        out.push({ ...item, time: round2(newBounds.starts[i] + local) });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Stretch cues and effects across a rebuilt timeline. Linked cues follow their subtitle. */
+export function scaleRanges<T extends Ranged>(items: readonly T[], factor: number): T[] {
+  if (!Number.isFinite(factor) || factor <= 0) return [...items];
+  return items
+    .map((item) => ({
+      ...item,
+      startTime: round2(item.startTime * factor),
+      duration: round2(item.duration * factor),
+    }))
+    .filter((item) => item.duration >= 0.05);
+}
+
+export function scalePoints<T extends Pointed>(items: readonly T[], factor: number): T[] {
+  if (!Number.isFinite(factor) || factor <= 0) return [...items];
+  return items.map((item) => ({ ...item, time: round2(item.time * factor) }));
+}
+
+export function followSubtitleTimes<T extends Ranged & { subtitleId?: string }>(
+  items: readonly T[],
+  subtitles: readonly { id: string; startTime: number; duration: number }[],
+  factor: number,
+): T[] {
+  const byId = new Map(subtitles.map((subtitle) => [subtitle.id, subtitle]));
+  return items.flatMap((item) => {
+    const subtitle = item.subtitleId ? byId.get(item.subtitleId) : undefined;
+    if (subtitle) {
+      return [{ ...item, startTime: round2(subtitle.startTime), duration: round2(subtitle.duration) }];
+    }
+    return scaleRanges([item], factor);
+  });
+}

@@ -32,10 +32,14 @@ import {
   clipStart,
   duplicatePointSpan,
   duplicateTimeSpan,
+  followSubtitleTimes,
   movePointSpan,
   moveTimeSpan,
+  remapPointsToDurations,
+  remapRangesToDurations,
   removePointSpan,
   removeTimeSpan,
+  scalePoints,
 } from '../../client/timeline/shiftTracks';
 import { splitClipAtLocalTime } from '../../client/timeline/splitClip';
 import { StudioAudioEngine } from '../../utils/audioEngine';
@@ -51,6 +55,35 @@ import {
   type LoadedMediaElement,
 } from '../../utils/canvasRenderer';
 import { fileToPersistentAvatarDataUrl } from '../../utils/digitalHumanAssets';
+
+function retimedForDurations<
+  T extends {
+    clips: { duration: number }[];
+    subtitles: SubtitleSegment[];
+    voiceoverCues?: VoiceoverCue[];
+    sfxEvents?: SfxEvent[];
+  },
+>(prev: T, clips: T['clips']): T {
+  const oldDurations = prev.clips.map((clip) => clip.duration);
+  const newDurations = clips.map((clip) => clip.duration);
+  if (
+    oldDurations.length !== newDurations.length ||
+    oldDurations.every((duration, index) => duration === newDurations[index])
+  ) {
+    return { ...prev, clips };
+  }
+  return {
+    ...prev,
+    clips,
+    subtitles: remapRangesToDurations(prev.subtitles, oldDurations, newDurations),
+    voiceoverCues: prev.voiceoverCues
+      ? remapRangesToDurations(prev.voiceoverCues, oldDurations, newDurations)
+      : prev.voiceoverCues,
+    sfxEvents: prev.sfxEvents
+      ? remapPointsToDurations(prev.sfxEvents, oldDurations, newDurations)
+      : prev.sfxEvents,
+  };
+}
 
 export interface StudioCommandInput {
   activePlatform: PlatformId;
@@ -481,12 +514,21 @@ export function useStudioCommands(input: StudioCommandInput) {
       bpm,
       currentProject.subtitles
     );
-    updateCurrentProject((prev) => ({
-      ...prev,
-      clips: result.clips,
-      subtitles: result.subtitles,
-      audio: { ...prev.audio, bpm },
-    }));
+    updateCurrentProject((prev) => {
+      const oldTotal = prev.clips.reduce((sum, clip) => sum + clip.duration, 0);
+      const newTotal = result.clips.reduce((sum, clip) => sum + clip.duration, 0);
+      const factor = oldTotal > 0 ? newTotal / oldTotal : 1;
+      return {
+        ...prev,
+        clips: result.clips,
+        subtitles: result.subtitles,
+        audio: { ...prev.audio, bpm },
+        voiceoverCues: prev.voiceoverCues
+          ? followSubtitleTimes(prev.voiceoverCues, result.subtitles, factor)
+          : prev.voiceoverCues,
+        sfxEvents: prev.sfxEvents ? scalePoints(prev.sfxEvents, factor) : prev.sfxEvents,
+      };
+    });
     setCurrentTime(0);
     setSelectedClipId(result.clips[0]?.id ?? null);
     setSelectedSubtitleId(null);
@@ -509,17 +551,18 @@ export function useStudioCommands(input: StudioCommandInput) {
   };
 
   const handleSnapToBeat = () => {
-    updateCurrentProject((prev) => ({
-      ...prev,
-      clips: snapClipsToBeat(prev.clips, prev.audio.bpm, assetsMap),
-    }));
+    updateCurrentProject((prev) => {
+      const clips = snapClipsToBeat(prev.clips, prev.audio.bpm, assetsMap);
+      return retimedForDurations(prev, clips);
+    });
   };
 
   const handleUpdateClip = (clipId: string, patch: Partial<TimelineClip>) => {
-    updateCurrentProject((prev) => ({
-      ...prev,
-      clips: prev.clips.map((c) => (c.id === clipId ? { ...c, ...patch } : c)),
-    }));
+    updateCurrentProject((prev) => {
+      const clips = prev.clips.map((c) => (c.id === clipId ? { ...c, ...patch } : c));
+      if (!Number.isFinite(patch.duration)) return { ...prev, clips };
+      return retimedForDurations(prev, clips);
+    });
   };
 
   const handleApplyTransitionSequence = (

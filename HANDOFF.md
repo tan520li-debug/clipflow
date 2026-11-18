@@ -1,5 +1,15 @@
 # ClipFlow 交接
 
+写于 2026-11-18 10:19（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
+
+## 本班（2026-11-18 10:19）
+
+改镜头时长、对齐节拍之后，后面的字幕、配音和音效还停在旧秒数上。现在按各镜头的新旧时长重新落点，被剪掉的那段里的音效去掉。一键节拍重剪会换整条时间线：挂在字幕上的配音跟着新字幕走，其余配音和音效按整段时长的比例缩放。
+
+10:18 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 16 个文件。Vitest 22 个文件、96 个测试通过。第一条 2.2 秒收到 1.88 秒时，原来 2.4 秒的字幕落到 2.08 秒；落在被剪掉的尾巴上的音效去掉。没有在页面上点对齐或重剪，避免改掉已保存的手冲时间线。没有点主播回答、配音、导出或说话视频。
+
+下面是 10:11 写下的原文。
+
 写于 2026-11-18 10:11（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有合进 `main`。不在这里等豆包。工作区还有未跟踪的 `cursor-studio-followup.patch`，不要提交。
 
 ## 本班（2026-11-18 10:11）

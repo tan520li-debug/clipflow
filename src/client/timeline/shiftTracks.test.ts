@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   duplicatePointSpan,
   duplicateTimeSpan,
+  followSubtitleTimes,
   moveTimeSpan,
+  remapPointsToDurations,
+  remapRangesToDurations,
   removePointSpan,
   removeTimeSpan,
+  scalePoints,
 } from './shiftTracks';
 
 describe('shiftTracks', () => {
@@ -68,5 +72,38 @@ describe('shiftTracks', () => {
       { id: 'whoosh', time: 0.4 },
       { id: 'whoosh-copy', time: 2.6 },
     ]);
+  });
+
+  it('pulls a later subtitle forward when the clip before it gets shorter', () => {
+    const next = remapRangesToDurations(
+      [{ id: 'later', startTime: 2.4, duration: 1 }],
+      [2.2, 2.6],
+      [1.88, 2.6],
+    );
+    expect(next).toEqual([{ id: 'later', startTime: 2.08, duration: 1 }]);
+  });
+
+  it('drops a sound that sat in the trimmed tail', () => {
+    const next = remapPointsToDurations([{ id: 'tail', time: 2 }, { id: 'keep', time: 0.5 }], [2.2], [1.88]);
+    expect(next).toEqual([{ id: 'keep', time: 0.5 }]);
+  });
+
+  it('moves a linked cue onto the rebuilt subtitle and scales the rest', () => {
+    const next = followSubtitleTimes(
+      [
+        { id: 'linked', subtitleId: 's1', startTime: 0.1, duration: 2 },
+        { id: 'loose', startTime: 4, duration: 1 },
+      ],
+      [{ id: 's1', startTime: 0.08, duration: 1.5 }],
+      0.5,
+    );
+    expect(next).toEqual([
+      { id: 'linked', subtitleId: 's1', startTime: 0.08, duration: 1.5 },
+      { id: 'loose', startTime: 2, duration: 0.5 },
+    ]);
+  });
+
+  it('scales a sound effect with the rebuilt timeline', () => {
+    expect(scalePoints([{ id: 'hit', time: 4 }], 0.5)).toEqual([{ id: 'hit', time: 2 }]);
   });
 });
