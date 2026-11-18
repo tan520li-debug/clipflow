@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Check, Copy, Download } from 'lucide-react';
 import type { MediaAsset, PlatformId, PlatformProjectState } from '../types/studio';
-import { exportSrtSubtitles, formatTimecode, getTotalDuration, PLATFORM_META } from '../utils/autoEditEngine';
+import { exportSrtSubtitles, formatTimecode, getTotalDuration, PLATFORM_META, ALL_PLATFORM_IDS } from '../utils/autoEditEngine';
 import { renderTimelineFrame, type LoadedMediaElement } from '../utils/canvasRenderer';
 
 interface MultiPlatformMatrixViewProps {
@@ -88,7 +88,7 @@ export function MultiPlatformMatrixView({
     URL.revokeObjectURL(url);
   };
 
-  const order: PlatformId[] = ['douyin', 'tiktok', 'facebook'];
+  const order: PlatformId[] = ALL_PLATFORM_IDS;
 
   return (
     <main className="flex-1 overflow-y-auto bg-[#0B0D10] p-6">
@@ -96,10 +96,10 @@ export function MultiPlatformMatrixView({
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-800/80 pb-4">
           <div>
             <h1 className="text-xl font-bold text-zinc-100 font-display">
-              三端成片对比与分发中心
+              五端成片对比与分发中心
             </h1>
             <p className="mt-1 text-xs text-zinc-400">
-              同一组素材已按抖音、TikTok 与 Facebook Reels 的黄金钩子、画幅比例及字幕风格独立剪辑完成。
+              同一组素材已按抖音、小红书、TikTok、Instagram 与 Facebook 的钩子、画幅和字幕风格分开剪好。
             </p>
           </div>
         </div>

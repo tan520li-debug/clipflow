@@ -389,7 +389,7 @@ export function SubtitleVoiceSection({
         })
         .filter((f): f is string => Boolean(f));
 
-      const [bgmResult, voResult, sfxResult] = await Promise.allSettled([
+      const [bgmResult, voResult] = await Promise.allSettled([
         apiFetch('/api/suggest-bgm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -446,26 +446,6 @@ export function SubtitleVoiceSection({
               return d;
             })
           : Promise.resolve(null),
-        apiFetch('/api/suggest-sfx', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            platform,
-            bpm: audio.bpm,
-            totalDuration: cursor,
-            timelineNodes,
-            subtitleNodes: subtitles.map((s) => ({
-              startTime: s.startTime,
-              text: s.text,
-              position: s.position,
-            })),
-            sampleFramesBase64,
-          }),
-        }).then(async (r) => {
-          const d = await r.json();
-          if (!r.ok) throw new Error(d?.error || 'SFX 推荐失败');
-          return d;
-        }),
       ]);
 
       const completedParts: string[] = [];
@@ -506,29 +486,38 @@ export function SubtitleVoiceSection({
 
       if (voResult.status === 'fulfilled' && voResult.value && Array.isArray(voResult.value.cues)) {
         const cues = voResult.value.cues as VoiceoverCue[];
-        const rawSfx =
-          sfxResult.status === 'fulfilled' && sfxResult.value && Array.isArray(sfxResult.value.events)
-            ? (sfxResult.value.events as SfxEvent[])
-            : undefined;
-        const placed = onSetVoiceoverCues(cues, rawSfx);
+        onSetVoiceoverCues(cues);
         completedParts.push(`${cues.length} 段真人感配音`);
-        if (placed && sfxResult.status === 'fulfilled' && sfxResult.value) {
-          sfxRef.current?.applyPackaged({
-            librarySummary: sfxResult.value.librarySummary || '已自动匹配转场与动作音效。',
-            events: placed,
-          });
-          completedParts.push(`${placed.length} 处节点音效`);
-        }
       } else if (voResult.status === 'rejected') {
         setVoiceoverError(voResult.reason instanceof Error ? voResult.reason.message : '配音生成失败');
       }
 
-      if (
-        !(voResult.status === 'fulfilled' && voResult.value && Array.isArray(voResult.value.cues)) &&
-        sfxResult.status === 'fulfilled' &&
-        sfxResult.value &&
-        Array.isArray(sfxResult.value.events)
-      ) {
+      let sfxResult: PromiseSettledResult<{ events?: SfxEvent[]; librarySummary?: string }>;
+      try {
+        const response = await apiFetch('/api/suggest-sfx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform,
+            bpm: audio.bpm,
+            totalDuration: cursor,
+            timelineNodes,
+            subtitleNodes: subtitles.map((s) => ({
+              startTime: s.startTime,
+              text: s.text,
+              position: s.position,
+            })),
+            sampleFramesBase64,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || 'SFX 推荐失败');
+        sfxResult = { status: 'fulfilled', value: data };
+      } catch (error) {
+        sfxResult = { status: 'rejected', reason: error };
+      }
+
+      if (sfxResult.status === 'fulfilled' && sfxResult.value && Array.isArray(sfxResult.value.events)) {
         const events = sfxResult.value.events as SfxEvent[];
         const placed = onSetSfxEvents(events) ?? events;
         sfxRef.current?.applyPackaged({
@@ -536,6 +525,8 @@ export function SubtitleVoiceSection({
           events: placed,
         });
         completedParts.push(`${placed.length} 处节点音效`);
+      } else if (sfxResult.status === 'rejected') {
+        setVoiceoverError(sfxResult.reason instanceof Error ? sfxResult.reason.message : '音效推荐失败');
       }
 
       if (completedParts.length > 0) {

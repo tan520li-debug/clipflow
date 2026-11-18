@@ -13,6 +13,7 @@ import {
 import type { MediaAiTags, MediaAsset, PlatformId } from '../types/studio';
 import { formatEditSeconds } from '../client/timeline/editSeconds';
 import { captureClipSnapshotBase64, type LoadedMediaElement } from '../utils/canvasRenderer';
+import { PLATFORM_META } from '../utils/autoEditEngine';
 import { apiFetch } from '../client/api/http';
 
 interface MediaLibraryViewProps {
@@ -412,12 +413,7 @@ export function MediaLibraryView({
                       >
                         <Plus className="w-3 h-3" />
                         <span>
-                          插入{' '}
-                          {activePlatform === 'douyin'
-                            ? '抖音'
-                            : activePlatform === 'tiktok'
-                              ? 'TikTok'
-                              : 'Facebook'}
+                          插入 {PLATFORM_META[activePlatform].shortLabel}
                         </span>
                       </button>
                       {asset.source === 'upload' && (

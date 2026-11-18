@@ -12,7 +12,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import type { AspectRatio, PlatformId, PlatformProjectState } from '../types/studio';
-import { formatTimecode, getTotalDuration } from '../utils/autoEditEngine';
+import { formatTimecode, getTotalDuration, PLATFORM_META, ALL_PLATFORM_IDS } from '../utils/autoEditEngine';
 import { computeTransitionBlurPx } from '../utils/canvasRenderer';
 
 interface PreviewStageProps {
@@ -68,26 +68,20 @@ export function PreviewStage({
       {/* Stage Top Toolbar */}
       <div className="px-5 py-2.5 border-b border-zinc-800/80 bg-[#0E1015]/80 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 p-1 bg-[#0B0D10] rounded-lg border border-zinc-800/90">
-          {(
-            [
-              { id: 'douyin', label: '抖音 Douyin' },
-              { id: 'tiktok', label: 'TikTok' },
-              { id: 'facebook', label: 'Facebook Reels' },
-            ] as const
-          ).map((item) => {
-            const active = activePlatform === item.id;
+          {ALL_PLATFORM_IDS.map((id) => {
+            const active = activePlatform === id;
             return (
               <button
-                key={item.id}
+                key={id}
                 type="button"
-                onClick={() => onChangePlatform(item.id)}
+                onClick={() => onChangePlatform(id)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                   active
                     ? 'bg-rose-600 text-white'
                     : 'text-zinc-400 hover:text-zinc-100'
                 }`}
               >
-                {item.label}
+                {PLATFORM_META[id].shortLabel}
               </button>
             );
           })}
@@ -157,11 +151,7 @@ export function PreviewStage({
               <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-[10px] text-white/75">
                 <div className="flex items-center justify-between border-b border-dashed border-white/25 pb-1.5">
                   <span className="font-mono-nums">
-                    {activePlatform === 'douyin'
-                      ? '抖音安全顶栏'
-                      : activePlatform === 'tiktok'
-                        ? 'Following · For You'
-                        : 'Reels Safe Top'}
+                    {PLATFORM_META[activePlatform].shortLabel}安全顶栏
                   </span>
                   <span className="font-mono-nums">{project.aspectRatio}</span>
                 </div>
@@ -252,11 +242,7 @@ export function PreviewStage({
         <div className="hidden xl:flex flex-col w-[260px] shrink-0 border border-zinc-800/80 bg-[#11141B] rounded-xl p-4 space-y-3 self-center">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-zinc-200">
-              {activePlatform === 'douyin'
-                ? '抖音发布文案'
-                : activePlatform === 'tiktok'
-                  ? 'TikTok 发布文案'
-                  : 'Facebook 文案'}
+              {PLATFORM_META[activePlatform].shortLabel}发布文案
             </span>
             <button
               type="button"

@@ -1,5 +1,25 @@
 # ClipFlow 交接
 
+写于 2026-11-18 12:19（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `1bed616`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 12:19）
+
+预览、素材库、五端对比和顶栏都能切到抖音、小红书、TikTok、Instagram、Facebook。简报里的目标平台仍只有抖音、TikTok、Facebook，避免「AI 生成多平台成片」把已经做好的抖音和 Facebook 重剪掉。
+
+一键配齐改为先等配音和配乐结束，再单独请求音效。文本模型单次仍是 20 秒超时，配乐和音效还会超时；超时后配音留下，音效要再点一次「AI 音效库推荐并匹配节点」。
+
+页面上亲自读了 IndexedDB（`clipflow` / `clipflow_studio_session_v1`），简报仍是「刷新保留验证：早八冰拿铁要还在」。抖音仍是 4 镜、8 条音效、4 段配音。Facebook 仍是 4 镜、6 条音效、4 段配音。没有重做这两端。
+
+TikTok 一键配齐成功。镜头 9.18、7.66、6.26、8.51 秒。音效 0.08 清脆叮声、0.08 闪烁星芒、9.18 点击咔哒、9.24 气泡音效、16.84 转场咻声、23.1 重击扫响。四段 Puck 配音都有音频。配乐 tech-118。16.9 秒和 23.16 秒的字幕没有字幕音效。
+
+Instagram 一键配齐时音效请求被中断，配音和配乐留下。随后单独推荐并插入。镜头 3.63、3.35、3.39、2.88 秒。音效 0.1、3.63、3.69、6.98、7.04、10.37、10.43 秒。四段 Kore 配音都有音频。配乐 fresh-112。
+
+小红书一键配齐留下四段 Zephyr 配音（音频长度 215800、259320、228600、213240）和拉长后的镜头 3.55、4.19、3.71、3.64 秒。配乐推荐超时，仍是默认 fresh-112。随后单独推荐并插入，音效 0.08 开场咔哒声、3.5 转场咻声、3.61 文字出现提示音、7.74 柔光闪烁、7.8 气泡音效、11.4 丝滑掠影、11.51 重点高亮叮声。切点是 0、3.55、7.74、11.45 秒；3.5 和 11.4 离切点不到 0.2 秒，按现有规则留在模型给出的时间。
+
+12:19 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、112 个测试通过。没有点导出、Veo 或说话视频。
+
+下面是 12:03 写下的原文。
+
 写于 2026-11-18 12:03（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `aad454c`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 12:03）

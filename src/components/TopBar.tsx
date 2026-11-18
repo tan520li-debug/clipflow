@@ -34,7 +34,7 @@ export function TopBar({ activeView, onChangeView, onOpenExport }: TopBarProps) 
 
   const navItems: Array<{ id: WorkspaceView; label: string }> = [
     { id: 'editor', label: '自动剪辑台' },
-    { id: 'matrix', label: '三端成片对比' },
+    { id: 'matrix', label: '五端成片对比' },
     { id: 'media', label: '媒体素材库' },
   ];
 
