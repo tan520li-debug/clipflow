@@ -1,5 +1,19 @@
 # ClipFlow 交接
 
+写于 2026-11-18 12:03（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `aad454c`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
+
+## 本班（2026-11-18 12:03）
+
+配音把片子拉长之后，音效还停在拉长前的秒数上。一条旧时间会贴到最近的切点；好几条旧时间挤在前面时，会按原来的顺序各贴一个切点，不再全挤到第一刀。已经写了镜头编号的，贴回那个镜头。字幕声如果挨着某条转场声，就跟着那条转场走。音效列表加了「贴回切点」。
+
+12:00 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 24 个文件、112 个测试通过。2.75、5.35、8.2 秒的三条转场声落到 11.5、22.96、35.7 秒；挂着第三镜编号的 4.75 秒落到 8.8 秒。
+
+12:03 在页面上点了 Facebook 的「贴回切点」。六条音效变成 0.1、11.5、11.56、22.96、35.7、35.76 秒。再点抖音的「贴回切点」。八条音效变成 0.08、0.1、3.98、4.04、8.8、8.86、20.34、20.4 秒。镜头时长没改。简报仍是「刷新保留验证：早八冰拿铁要还在」。没有点配齐、语音识别、导出或说话视频。
+
+音效接口要带上这次的整表落点，所以停掉原来的开发服务再开了一次。同一分钟读了 `http://127.0.0.1:3000/api/health`，状态码 200。重新打开后简报还在，抖音音效仍是贴回后的秒数。
+
+下面是 11:49 写下的原文。
+
 写于 2026-11-18 11:49（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `804e9d6`。`origin/cursor/studio-followup` 仍是 `db6c1c3`。`origin/main` 仍是 `a233f0f`。没有推送，没有合进 `main`。不在这里等豆包。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。
 
 ## 本班（2026-11-18 11:49）

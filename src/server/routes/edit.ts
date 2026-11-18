@@ -6,7 +6,7 @@ import {
   getTranscribeModelCandidates,
 } from '../gemini.ts';
 import { acceptJsonJob } from '../jobs/http.ts';
-import { placeSuggestedSfxTime } from '../../domain/timeline/placeSfx.ts';
+import { placeSuggestedSfxEvents } from '../../domain/timeline/placeSfx.ts';
 
 export function registerEditRoutes(app: express.Express) {
 app.post('/api/auto-edit', acceptJsonJob('auto-edit', async (req, res) => {
@@ -1029,9 +1029,21 @@ Rules:
       shimmer: 0.45,
     };
 
+    const clipBounds = timelineNodes
+      .map((node: { clipId?: string; startTime?: number; endTime?: number }) => ({
+        id: typeof node.clipId === 'string' ? node.clipId : undefined,
+        startTime: Number(node.startTime) || 0,
+        endTime: Number(node.endTime) || 0,
+      }))
+      .filter((node: { startTime: number; endTime: number }) => node.endTime > node.startTime);
+    const subtitleStarts = Array.isArray(subtitleNodes)
+      ? subtitleNodes.map((node: { startTime?: number }) => ({
+          startTime: Number(node.startTime) || 0,
+        }))
+      : [];
     const rawEvents = Array.isArray(parsed.sfxEvents) ? parsed.sfxEvents : [];
-    const events = rawEvents
-      .map(
+    const events = placeSuggestedSfxEvents(
+      rawEvents.map(
         (
           ev: {
             type?: string;
@@ -1042,47 +1054,30 @@ Rules:
             reason?: string;
             linkedClipId?: string;
           },
-          idx: number
+          idx: number,
         ) => {
           const safeType = validTypes.has(String(ev.type)) ? String(ev.type) : 'whoosh';
           const safeCategory = validCategories.has(String(ev.category))
             ? String(ev.category)
             : 'transition';
-          const clipBounds = timelineNodes
-            .map((node: { startTime?: number; endTime?: number }) => ({
-              startTime: Number(node.startTime) || 0,
-              endTime: Number(node.endTime) || 0,
-            }))
-            .filter((node: { startTime: number; endTime: number }) => node.endTime > node.startTime);
-          const subtitleStarts = Array.isArray(subtitleNodes)
-            ? subtitleNodes.map((node: { startTime?: number }) => ({
-                startTime: Number(node.startTime) || 0,
-              }))
-            : [];
-          const safeTime = placeSuggestedSfxTime({
-            time: Number(ev.time) || 0,
-            category: safeCategory,
-            totalDuration: safeTotal,
-            clips: clipBounds,
-            subtitles: subtitleStarts,
-          });
           const safeVol = Number(
-            Math.max(0.45, Math.min(0.95, Number(ev.volume) || 0.75)).toFixed(2)
+            Math.max(0.45, Math.min(0.95, Number(ev.volume) || 0.75)).toFixed(2),
           );
           return {
             id: `sfx-ai-${Date.now()}-${idx}`,
             type: safeType,
             name: (ev.name || safeType).trim(),
-            time: safeTime,
+            time: Number(ev.time) || 0,
             duration: sfxDurationMap[safeType] ?? 0.25,
             volume: safeVol,
             category: safeCategory,
             reason: (ev.reason || '匹配时间轴转场动作节点').trim(),
             linkedClipId: typeof ev.linkedClipId === 'string' ? ev.linkedClipId : undefined,
           };
-        }
-      )
-      .sort((a: { time: number }, b: { time: number }) => a.time - b.time);
+        },
+      ),
+      { totalDuration: safeTotal, clips: clipBounds, subtitles: subtitleStarts },
+    ).sort((a: { time: number }, b: { time: number }) => a.time - b.time);
 
     return res.json({
       librarySummary:

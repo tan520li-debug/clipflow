@@ -373,16 +373,25 @@ export const SfxSection = forwardRef<SfxSectionHandle, SfxSectionProps>(function
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-zinc-400">时间线已插入音效</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSetSfxEvents([]);
-                      setSfxAppliedAll(false);
-                    }}
-                    className="text-zinc-500 hover:text-red-300 transition-colors"
-                  >
-                    全部清空
-                  </button>
+                  <span className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onSetSfxEvents(sfxEvents)}
+                      className="text-cyan-400 hover:text-cyan-200 transition-colors"
+                    >
+                      贴回切点
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetSfxEvents([]);
+                        setSfxAppliedAll(false);
+                      }}
+                      className="text-zinc-500 hover:text-red-300 transition-colors"
+                    >
+                      全部清空
+                    </button>
+                  </span>
                 </div>
                 <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
                   {sfxEvents.map((ev) => (

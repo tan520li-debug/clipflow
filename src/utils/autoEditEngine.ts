@@ -17,6 +17,7 @@ import type {
   VoiceoverCue,
   VoicePresetOption,
 } from '../types/studio';
+import { boundsForClips, placeSuggestedSfxEvents } from '../domain/timeline/placeSfx';
 
 export const ALL_PLATFORM_IDS: PlatformId[] = [
   'douyin',
@@ -1229,7 +1230,7 @@ export function alignProjectTimelineToVoiceover(
 
   // 5. Shift SFX events so cut/transition SFX stay aligned to the shifted clip boundaries
   const newTotal = getTotalDuration(alignedClips);
-  const alignedSfx = (project.sfxEvents ?? []).map((ev) => {
+  const shiftedSfx = (project.sfxEvents ?? []).map((ev) => {
     const origIdx = origClipBounds.findIndex(
       (b) => ev.time >= b.start - 0.05 && ev.time <= b.end + 0.05
     );
@@ -1251,6 +1252,11 @@ export function alignProjectTimelineToVoiceover(
       };
     }
     return ev;
+  });
+  const alignedSfx = placeSuggestedSfxEvents(shiftedSfx, {
+    totalDuration: newTotal,
+    clips: boundsForClips(alignedClips),
+    subtitles: alignedSubtitles,
   });
 
   return {
