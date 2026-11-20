@@ -1,5 +1,11 @@
 # ClipFlow 交接
 
+写于 2026-11-20 17:06（UTC+8）。仓库 `d:\clipflow\clipflow`。用户要求把 MCP 上架。这个仓库原来没有 MCP 服务。新增 `clipflow-mcp/`，只提供 `studio_health`，请求本机 `GET /api/health`。不生成视频，不发到平台。17:05 在仓库根目录跑了完整 `npm run check`，退出码 0。Biome 检查 18 个文件。Vitest 28 个文件、123 个测试通过。市场提交页要登录 Cursor 账号，这一步还没替用户提交。
+
+下面是此前交接的原文。
+
+# ClipFlow 交接
+
 写于 2026-11-18 15:26（UTC+8）。仓库 `d:\clipflow\clipflow`。远程 `origin` 是 `https://github.com/tan520li-debug/clipflow.git`。本地分支 `cursor/studio-followup`。上一笔是 `fb76c40`。`origin/main` 仍是 `6bf7575`。没有推送，没有再合进 `main`。工作区未跟踪的 `cursor-studio-followup.patch` 不要提交，也不要删。`data/` 不要提交。
 
 ## 本班（2026-11-18 15:26）

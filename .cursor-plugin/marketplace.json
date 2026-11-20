@@ -1,0 +1,17 @@
+{
+  "name": "clipflow",
+  "owner": {
+    "name": "合肥拓路人信息科技有限公司"
+  },
+  "metadata": {
+    "description": "Local ClipFlow studio plugins"
+  },
+  "plugins": [
+    {
+      "name": "clipflow-mcp",
+      "source": "clipflow-mcp",
+      "description": "Read the health of a local ClipFlow studio.",
+      "license": "MIT"
+    }
+  ]
+}

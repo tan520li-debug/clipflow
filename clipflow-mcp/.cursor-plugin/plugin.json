@@ -1,0 +1,23 @@
+{
+  "name": "clipflow-mcp",
+  "version": "0.1.0",
+  "description": "Read the health of a local ClipFlow studio. It does not generate video or publish to social platforms.",
+  "author": {
+    "name": "合肥拓路人信息科技有限公司"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/tan520li-debug/clipflow",
+  "keywords": ["clipflow", "video", "health"],
+  "logo": "assets/logo.svg",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "CLIPFLOW_URL": {
+        "type": "string",
+        "default": "http://127.0.0.1:3000",
+        "title": "Studio URL",
+        "description": "Origin of a running ClipFlow studio. The health tool requests /api/health there."
+      }
+    }
+  }
+}

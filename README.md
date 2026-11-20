@@ -30,6 +30,10 @@ npm run dev
 
 ffmpeg 不在 PATH 上时，设置 `FFMPEG_PATH` 为可执行文件的绝对路径。导出成片会转成 H.264 MP4。转码中间文件写在仓库的 `data/tmp`，可用 `CLIPFLOW_TMP_DIR` 改成别的绝对路径。
 
+## MCP 插件
+
+`clipflow-mcp/` 是给 Cursor 市场的插件，只读本机 `GET /api/health`。说明在 `clipflow-mcp/README.md`。它不生成视频，也不向平台发布。
+
 ## 检查
 
 ```bash
