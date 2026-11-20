@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "面向抖音、小红书、TikTok、Instagram Reels 与 Facebook Reels 的中英双语短视频剪辑工作台",
   "author": "合肥拓路人信息科技有限公司 <tan520li@gmail.com>",
+  "license": "MIT",
   "type": "module",
   "packageManager": "npm@11.19.0",
   "engines": {
