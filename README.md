@@ -2,6 +2,9 @@
 
 面向抖音、TikTok 和 Facebook Reels 的本地短视频剪辑台。长任务走服务端队列，素材和时间线保存在浏览器的 IndexedDB 里。
 
+出品人：合肥拓路人信息科技有限公司  
+联系邮箱：tan520li@gmail.com
+
 ## 运行
 
 需要 Node.js 22 或更高版本。
